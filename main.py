@@ -1,10 +1,10 @@
 import sys
 import ctypes
 import logging
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QDialog
 from PyQt6.QtGui import QPixmap, QPainter, QColor, QFont, QIcon
 from PyQt6.QtCore import Qt
-from main_window import MainWindow
+from main_window import MainWindow, AuthDialog
 
 def setup_logging():
     """Настройка логирования в консоль и в файл app.log"""
@@ -252,12 +252,24 @@ def main():
     app.setWindowIcon(app_icon)
     app.setStyleSheet(DARK_GRADIENT_STYLE)
     
-    window = MainWindow()
-    window.setWindowIcon(app_icon)
-    window.show()
+    # Открываем диалоговое окно авторизации / регистрации
+    auth_dialog = AuthDialog()
+    auth_dialog.setWindowIcon(app_icon)
     
-    logger.info("Главное окно успешно отображено.")
-    sys.exit(app.exec())
+    if auth_dialog.exec() == QDialog.DialogCode.Accepted:
+        user_id = auth_dialog.user_id
+        username = auth_dialog.username
+        
+        # Передаем авторизованного пользователя в главное окно
+        window = MainWindow(user_id=user_id, username=username)
+        window.setWindowIcon(app_icon)
+        window.show()
+        
+        logger.info(f"Главное окно успешно отображено для пользователя '{username}' (ID: {user_id}).")
+        sys.exit(app.exec())
+    else:
+        logger.info("Авторизация отменена пользователем.")
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()

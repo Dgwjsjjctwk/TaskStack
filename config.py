@@ -10,14 +10,76 @@ DEFAULT_CONFIG = {
     "organization_name": "MTUCI",
     "application_name": "TaskManagerLab",
     "default_opacity": 0.7,
-    "default_window_width": 550,
-    "default_window_height": 550,
+    "default_window_width": 600,
+    "default_window_height": 580,
+    "default_language": "ru",
+    "ai_url": "http://localhost:11434/api/generate",
+    "ai_model": "llama3",
+    "ai_api_key": "",
+    "server_url": "http://127.0.0.1:8000",
     "categories": [
         "💻 Разработка",
         "📚 Учёба",
         "🏠 Личное",
         "📌 Прочее"
     ]
+}
+
+TRANSLATIONS = {
+    "ru": {
+        "title": "Менеджер задач",
+        "new_task_placeholder": "Название новой задачи...",
+        "add_btn": "Добавить",
+        "ai_btn": "🤖 ИИ-задача",
+        "search_placeholder": "🔍 Поиск по задачам...",
+        "all_categories": "Все категории",
+        "filter_all": "Все",
+        "filter_active": "Активные",
+        "filter_completed": "Завершённые",
+        "delete_btn": "🗑 Удалить",
+        "clear_btn": "🧹 Очистить всё",
+        "settings_title": "Настройки",
+        "opacity_label": "Степень полупрозрачности:",
+        "lang_label": "Язык интерфейса / Language:",
+        "api_key_label": "API ключ ИИ (необязательно):",
+        "api_key_placeholder": "sk-...",
+        "reset_btn": "Сбросить по умолчанию",
+        "save_btn": "Готово",
+        "priorities": ["⚡ Средний", "🔥 Высокий", "☕ Низкий"],
+        "categories": [
+            "💻 Разработка",
+            "📚 Учёба",
+            "🏠 Личное",
+            "📌 Прочее"
+        ]
+    },
+    "en": {
+        "title": "Task Manager",
+        "new_task_placeholder": "New task title...",
+        "add_btn": "Add",
+        "ai_btn": "🤖 AI Task",
+        "search_placeholder": "🔍 Search tasks...",
+        "all_categories": "All Categories",
+        "filter_all": "All",
+        "filter_active": "Active",
+        "filter_completed": "Completed",
+        "delete_btn": "🗑 Delete",
+        "clear_btn": "🧹 Clear All",
+        "settings_title": "Settings",
+        "opacity_label": "Window Opacity:",
+        "lang_label": "Language / Язык интерфейса:",
+        "api_key_label": "AI API Key (optional):",
+        "api_key_placeholder": "sk-...",
+        "reset_btn": "Reset to Default",
+        "save_btn": "Done",
+        "priorities": ["⚡ Medium", "🔥 High", "☕ Low"],
+        "categories": [
+            "💻 Development",
+            "📚 Study",
+            "🏠 Personal",
+            "📌 Other"
+        ]
+    }
 }
 
 def load_config():
@@ -46,208 +108,8 @@ APPLICATION_NAME = config_data["application_name"]
 DEFAULT_OPACITY = config_data["default_opacity"]
 DEFAULT_WINDOW_WIDTH = config_data["default_window_width"]
 DEFAULT_WINDOW_HEIGHT = config_data["default_window_height"]
+AI_URL = config_data["ai_url"]
+AI_MODEL = config_data["ai_model"]
+AI_API_KEY = config_data["ai_api_key"]
+SERVER_URL = os.environ.get("TASKSTACK_SERVER_URL", config_data["server_url"]).rstrip("/")
 CATEGORIES = config_data["categories"]
-
-DARK_GRADIENT_STYLE = """
-/* Главное окно и диалоги */
-QMainWindow, QDialog {
-    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, 
-                                stop: 0 #2b303c, 
-                                stop: 1 #0a1128);
-    font-family: 'Segoe UI', Arial, sans-serif;
-    font-size: 14px;
-    color: #e2e8f0;
-    border-radius: 12px;
-}
-
-/* Поля ввода, выпадающие списки и выбор дат */
-QLineEdit, QComboBox, QDateEdit {
-    background-color: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 6px 10px;
-    color: #ffffff;
-    selection-background-color: #1f6feb;
-}
-QLineEdit:focus, QComboBox:focus, QDateEdit:focus {
-    border: 2px solid #388bfd;
-}
-QComboBox::drop-down, QDateEdit::drop-down {
-    border: 0px;
-}
-QComboBox QAbstractItemView, QDateEdit QAbstractItemView {
-    background-color: #161b22;
-    color: #ffffff;
-    selection-background-color: #1f6feb;
-    border: 1px solid #30363d;
-}
-
-/* Стандартные кнопки */
-QPushButton {
-    background-color: #21262d;
-    border: 1px solid #363b42;
-    border-radius: 8px;
-    padding: 6px 14px;
-    font-weight: 500;
-    color: #c9d1d9;
-}
-QPushButton:hover {
-    background-color: #30363d;
-    border-color: #8b949e;
-}
-QPushButton:pressed {
-    background-color: #161b22;
-}
-
-/* Акцентная кнопка «Добавить» */
-QPushButton#AddButton {
-    background-color: #238636;
-    color: white;
-    border: none;
-}
-QPushButton#AddButton:hover {
-    background-color: #2ea043;
-}
-
-/* Кнопки фильтров */
-QPushButton#FilterBtn {
-    background-color: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 12px;
-    color: #8b949e;
-}
-QPushButton#FilterBtn:hover {
-    background-color: #21262d;
-    color: #e2e8f0;
-}
-QPushButton#FilterBtn[active="true"] {
-    background-color: #1f6feb;
-    border-color: #388bfd;
-    color: #ffffff;
-    font-weight: 600;
-}
-
-/* Кнопки управления окном */
-QPushButton#IconButton, QPushButton#WindowButton {
-    background-color: #21262d;
-    border: 1px solid #363b42;
-    border-radius: 16px;
-    padding: 0px;
-    margin: 0px;
-    font-size: 14px;
-    color: #c9d1d9;
-}
-QPushButton#IconButton:hover, QPushButton#WindowButton:hover {
-    background-color: #30363d;
-}
-
-QPushButton#CloseButton {
-    background-color: #21262d;
-    border: 1px solid #363b42;
-    border-radius: 16px;
-    padding: 0px;
-    margin: 0px;
-    font-size: 13px;
-    font-weight: bold;
-    color: #c9d1d9;
-}
-QPushButton#CloseButton:hover {
-    background-color: #da3633;
-    color: white;
-    border-color: #da3633;
-}
-
-/* Кружки статуса задачи */
-QPushButton#GreenBtn {
-    background-color: #198754;
-    border: none;
-    border-radius: 12px;
-}
-QPushButton#GreenBtn:hover {
-    background-color: #157347;
-}
-
-QPushButton#RedBtn {
-    background-color: #dc3545;
-    border: none;
-    border-radius: 12px;
-}
-QPushButton#RedBtn:hover {
-    background-color: #bb2d3b;
-}
-
-/* Нижние компактные кнопки */
-QPushButton#ActionBtn {
-    background-color: #21262d;
-    border: 1px solid #363b42;
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 12px;
-    font-weight: 400;
-    color: #c9d1d9;
-}
-QPushButton#ActionBtn:hover {
-    background-color: #30363d;
-    border-color: #8b949e;
-    color: #ffffff;
-}
-
-/* Список задач */
-QListWidget {
-    background-color: #111625;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 4px;
-}
-QListWidget::item {
-    background-color: #1b2234;
-    border-bottom: 1px solid #28324a;
-    border-radius: 6px;
-    margin-bottom: 4px;
-    padding: 4px;
-    color: #e2e8f0;
-}
-QListWidget::item:selected {
-    background-color: #1f6feb;
-    color: #ffffff;
-}
-
-/* Прогресс-бар */
-QProgressBar {
-    background-color: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 4px;
-    height: 8px;
-    text-align: center;
-    color: #ffffff;
-    font-weight: bold;
-    font-size: 11px;
-}
-QProgressBar::chunk {
-    background-color: #238636;
-    border-radius: 3px;
-}
-
-/* Слайдер */
-QSlider::groove:horizontal {
-    border: 1px solid #30363d;
-    height: 6px;
-    background: #161b22;
-    border-radius: 3px;
-}
-QSlider::handle:horizontal {
-    background: #58a6ff;
-    border: none;
-    width: 16px;
-    height: 16px;
-    margin: -5px 0;
-    border-radius: 8px;
-}
-
-QLabel {
-    color: #e2e8f0;
-    font-weight: 500;
-}
-"""
