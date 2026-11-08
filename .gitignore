@@ -10,6 +10,9 @@ __pycache__/
 # Local configuration and logs
 config.json
 *.log
+server_tasks.db
+server_tasks.db-wal
+server_tasks.db-shm
 
 # Build output
 build/
