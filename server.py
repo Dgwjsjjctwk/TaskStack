@@ -122,6 +122,19 @@ def _integrity_errors():
     return (sqlite3.IntegrityError,)
 
 
+def validate_database_config(database_url=None, require_database_url=None):
+    if database_url is None:
+        database_url = DATABASE_URL
+    if require_database_url is None:
+        require_database_url = (
+            os.environ.get("TASKSTACK_REQUIRE_DATABASE_URL", "").lower() == "true"
+        )
+    if require_database_url and not database_url:
+        raise RuntimeError(
+            "DATABASE_URL is required for this deployment; refusing ephemeral SQLite storage"
+        )
+
+
 @contextmanager
 def connect_db():
     conn = _open_db()
@@ -314,6 +327,7 @@ def can_access_task(cursor, task_id: int, user_id: int) -> bool:
     return row is not None
 
 
+validate_database_config()
 init_db()
 
 
@@ -346,7 +360,12 @@ class TaskUpdateModel(BaseModel):
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    with connect_db() as conn:
+        conn.execute("SELECT 1").fetchone()
+    return {
+        "status": "ok",
+        "database": "postgresql" if DATABASE_URL else "sqlite",
+    }
 
 
 @app.post("/register")

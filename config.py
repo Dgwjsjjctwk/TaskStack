@@ -5,6 +5,8 @@ import logging
 logger = logging.getLogger("Config")
 
 CONFIG_FILE = "config.json"
+DEFAULT_SERVER_URL = "https://taskstack-o9vw.onrender.com"
+LEGACY_LOCAL_SERVER_URLS = {"http://127.0.0.1:8000", "http://localhost:8000"}
 
 DEFAULT_CONFIG = {
     "organization_name": "MTUCI",
@@ -16,7 +18,7 @@ DEFAULT_CONFIG = {
     "ai_url": "http://localhost:11434/api/generate",
     "ai_model": "llama3",
     "ai_api_key": "",
-    "server_url": "http://127.0.0.1:8000",
+    "server_url": DEFAULT_SERVER_URL,
     "categories": [
         "💻 Разработка",
         "📚 Учёба",
@@ -111,5 +113,10 @@ DEFAULT_WINDOW_HEIGHT = config_data["default_window_height"]
 AI_URL = config_data["ai_url"]
 AI_MODEL = config_data["ai_model"]
 AI_API_KEY = config_data["ai_api_key"]
-SERVER_URL = os.environ.get("TASKSTACK_SERVER_URL", config_data["server_url"]).rstrip("/")
+SERVER_URL = os.environ.get("TASKSTACK_SERVER_URL", "").strip()
+if not SERVER_URL:
+    SERVER_URL = config_data["server_url"]
+    if SERVER_URL in LEGACY_LOCAL_SERVER_URLS:
+        SERVER_URL = DEFAULT_SERVER_URL
+SERVER_URL = SERVER_URL.rstrip("/")
 CATEGORIES = config_data["categories"]

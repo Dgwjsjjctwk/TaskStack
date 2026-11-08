@@ -1,8 +1,10 @@
 import os
 import hashlib
+import re
 import tempfile
 import unittest
 from unittest.mock import Mock
+from pathlib import Path
 
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -180,6 +182,21 @@ class ServerAuthenticationTests(unittest.TestCase):
             insert_with_id, "INSERT INTO tasks (title) VALUES (%s) RETURNING id"
         )
 
+    def test_render_configuration_refuses_missing_database_url(self):
+        with self.assertRaisesRegex(RuntimeError, "DATABASE_URL is required"):
+            server.validate_database_config(
+                database_url=None, require_database_url=True
+            )
+        server.validate_database_config(
+            database_url="postgresql://configured", require_database_url=True
+        )
+
+    def test_health_checks_database_and_reports_backend(self):
+        result = server.health_check()
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["database"], "sqlite")
+
     def test_postgres_cursor_lastrowid_reads_returning_id(self):
         cursor = Mock()
         cursor.fetchone.return_value = {"id": 27}
@@ -191,6 +208,23 @@ class ServerAuthenticationTests(unittest.TestCase):
         cursor.execute.assert_called_once_with(
             "INSERT INTO tasks (title) VALUES (%s) RETURNING id", ("demo",)
         )
+
+    def test_client_endpoint_paths_exist_in_api(self):
+        source = (Path(__file__).parents[1] / "main_window.py").read_text(
+            encoding="utf-8"
+        )
+        client_paths = {
+            re.sub(r"\{(?:self\.)?(?:user_id|current_user_id|task_id|widget\.task_id)\}", "{task_id}", path.split("?", 1)[0])
+            for path in re.findall(r'f"\{SERVER_URL\}([^"]+)"', source)
+        }
+        client_paths.discard("{endpoint}")
+        client_paths.update({"/register", "/login"})
+        api_paths = {
+            route.path for route in server.app.routes if getattr(route, "path", None)
+        }
+
+        self.assertTrue(client_paths)
+        self.assertEqual(client_paths - api_paths, set())
 
 
 if __name__ == "__main__":

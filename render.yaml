@@ -6,7 +6,9 @@ services:
     buildCommand: pip install -r requirements-server.txt
     startCommand: python -m uvicorn server:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
-    autoDeploy: false
+    autoDeploy: true
     envVars:
+      - key: TASKSTACK_REQUIRE_DATABASE_URL
+        value: "true"
       - key: DATABASE_URL
         sync: false

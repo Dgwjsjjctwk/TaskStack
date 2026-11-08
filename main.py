@@ -36,7 +36,7 @@ def create_app_icon():
     return QIcon(pixmap)
 
 if sys.platform == 'win32':
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('MTUCI.TaskManager.App.1.0')
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('MTUCI.TaskManager.App.1.1')
 
 DARK_GRADIENT_STYLE = """
 /* Главное окно и диалоги */
