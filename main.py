@@ -4,15 +4,17 @@ import logging
 from PyQt6.QtWidgets import QApplication, QDialog
 from PyQt6.QtGui import QPixmap, QPainter, QColor, QFont, QIcon
 from PyQt6.QtCore import Qt
+from app_paths import app_data_directory
 from main_window import MainWindow, AuthDialog
 
 def setup_logging():
-    """Настройка логирования в консоль и в файл app.log"""
+    """Write logs to the platform's per-user application data directory."""
+    log_file = app_data_directory() / "app.log"
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=[
-            logging.FileHandler("app.log", encoding="utf-8"),
+            logging.FileHandler(log_file, encoding="utf-8"),
             logging.StreamHandler(sys.stdout)
         ]
     )
