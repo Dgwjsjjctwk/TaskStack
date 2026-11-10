@@ -1,10 +1,13 @@
 import json
-import os
 import logging
+import os
+from pathlib import Path
+
+from app_paths import config_directory, migrate_legacy_config
 
 logger = logging.getLogger("Config")
 
-CONFIG_FILE = "config.json"
+CONFIG_FILE = config_directory() / "config.json"
 DEFAULT_SERVER_URL = "https://taskstack-o9vw.onrender.com"
 LEGACY_LOCAL_SERVER_URLS = {"http://127.0.0.1:8000", "http://localhost:8000"}
 
@@ -84,24 +87,57 @@ TRANSLATIONS = {
     }
 }
 
-def load_config():
-    if os.path.exists(CONFIG_FILE):
+
+def is_legacy_taskstack_config(config_file):
+    try:
+        with Path(config_file).open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    return (
+        isinstance(data, dict)
+        and data.get("organization_name") == DEFAULT_CONFIG["organization_name"]
+        and data.get("application_name") == DEFAULT_CONFIG["application_name"]
+        and "server_url" in data
+    )
+
+
+def load_config(config_file=CONFIG_FILE, legacy_config_file=None):
+    config_file = Path(config_file)
+    if legacy_config_file is None:
+        legacy_config_file = Path.cwd() / "config.json"
+
+    if not config_file.exists():
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                logger.info("Конфигурация успешно загружена из config.json")
+            migrated = migrate_legacy_config(
+                legacy_config_file, config_file, is_legacy_taskstack_config
+            )
+        except OSError as error:
+            logger.error("Не удалось перенести старую конфигурацию: %s", error)
+            migrated = False
+
+        if migrated:
+            logger.info("Перенесена старая конфигурация в пользовательскую папку приложения.")
+
+    if config_file.exists():
+        try:
+            with config_file.open("r", encoding="utf-8") as file:
+                data = json.load(file)
+                logger.info("Конфигурация успешно загружена из %s", config_file)
                 return {**DEFAULT_CONFIG, **data}
-        except Exception as e:
-            logger.error(f"Ошибка чтения config.json: {e}. Используются настройки по умолчанию.")
+        except (OSError, json.JSONDecodeError, TypeError) as error:
+            logger.error("Ошибка чтения конфигурации %s: %s", config_file, error)
     else:
         try:
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(DEFAULT_CONFIG, f, indent=4, ensure_ascii=False)
+            with config_file.open("w", encoding="utf-8") as file:
+                json.dump(DEFAULT_CONFIG, file, indent=4, ensure_ascii=False)
                 logger.info("Создан новый файл config.json со значениями по умолчанию.")
-        except Exception as e:
-            logger.error(f"Не удалось создать config.json: {e}")
-            
+        except OSError as error:
+            logger.error("Не удалось создать конфигурацию %s: %s", config_file, error)
+
     return DEFAULT_CONFIG
+
 
 config_data = load_config()
 
@@ -113,10 +149,16 @@ DEFAULT_WINDOW_HEIGHT = config_data["default_window_height"]
 AI_URL = config_data["ai_url"]
 AI_MODEL = config_data["ai_model"]
 AI_API_KEY = config_data["ai_api_key"]
-SERVER_URL = os.environ.get("TASKSTACK_SERVER_URL", "").strip()
-if not SERVER_URL:
-    SERVER_URL = config_data["server_url"]
-    if SERVER_URL in LEGACY_LOCAL_SERVER_URLS:
-        SERVER_URL = DEFAULT_SERVER_URL
-SERVER_URL = SERVER_URL.rstrip("/")
+
+
+def resolve_server_url(config, environ):
+    server_url = environ.get("TASKSTACK_SERVER_URL", "").strip()
+    if not server_url:
+        server_url = config.get("server_url", DEFAULT_SERVER_URL)
+        if server_url in LEGACY_LOCAL_SERVER_URLS:
+            server_url = DEFAULT_SERVER_URL
+    return server_url.rstrip("/")
+
+
+SERVER_URL = resolve_server_url(config_data, os.environ)
 CATEGORIES = config_data["categories"]

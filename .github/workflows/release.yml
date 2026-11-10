@@ -1,0 +1,199 @@
+name: Build and publish desktop installers
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - id: version
+        name: Verify release version
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and "v$version" -ne $env:GITHUB_REF_NAME) {
+            throw "Release tag $env:GITHUB_REF_NAME does not match VERSION $version"
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+      - name: Install build dependencies
+        run: python -m pip install -r requirements.txt -r requirements-build.txt
+      - name: Build Windows executable
+        run: python -m PyInstaller --noconfirm --clean --distpath release-build/dist --workpath release-build/work TaskManager.spec
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "innosetup-6.7.4.exe"
+          Invoke-WebRequest -Uri "https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe" -OutFile $installer
+          $digest = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne "a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c") {
+            throw "Inno Setup installer SHA-256 did not match the pinned release"
+          }
+          if ((Get-AuthenticodeSignature $installer).Status -ne "Valid") {
+            throw "Inno Setup installer signature is not valid"
+          }
+          $install = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" -Wait -PassThru
+          if ($install.ExitCode -ne 0) {
+            throw "Inno Setup installation failed with exit code $($install.ExitCode)"
+          }
+      - name: Build Windows installer
+        shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          New-Item -ItemType Directory -Force release-build\setup | Out-Null
+          $compilerCandidates = @(
+            (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"),
+            (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe")
+          )
+          $compiler = $compilerCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) {
+            throw "Inno Setup compiler was not found after installation"
+          }
+          & $compiler "/DAppVersion=$env:APP_VERSION" "packaging\windows\TaskStack.iss"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taskstack-windows-x64
+          path: release-build/setup/TaskStack-Setup-*-win-x64.exe
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - id: version
+        name: Verify release version
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match VERSION $version" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Install build dependencies
+        run: python -m pip install -r requirements.txt -r requirements-build.txt
+      - name: Build Linux executable
+        run: python -m PyInstaller --noconfirm --clean --distpath release-build/dist --workpath release-build/work TaskManager.spec
+      - name: Install AppImage icon converter
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes librsvg2-bin
+      - name: Assemble AppImage
+        env:
+          APP_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          app_dir="$GITHUB_WORKSPACE/release-build/AppDir"
+          mkdir -p "$app_dir/usr/bin" "$app_dir/usr/share/applications" "$app_dir/usr/share/icons/hicolor/scalable/apps"
+          cp release-build/dist/TaskStack "$app_dir/usr/bin/TaskStack"
+          cp packaging/linux/AppRun "$app_dir/AppRun"
+          cp packaging/linux/taskstack.desktop "$app_dir/usr/share/applications/taskstack.desktop"
+          cp packaging/linux/taskstack.svg "$app_dir/usr/share/icons/hicolor/scalable/apps/taskstack.svg"
+          rsvg-convert --width 256 --height 256 \
+            packaging/linux/taskstack.svg --output "$app_dir/taskstack.png"
+          ln -s taskstack.png "$app_dir/.DirIcon"
+          ln -s usr/share/applications/taskstack.desktop "$app_dir/taskstack.desktop"
+          chmod +x "$app_dir/AppRun" "$app_dir/usr/bin/TaskStack"
+          curl --fail --location --retry 3 \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
+            --output release-build/appimagetool-x86_64.AppImage
+          printf '%s  %s\n' \
+            e8c1169c4af66c3184d7ee110713d4be04befe671fa358e2c1591ee840553b03 \
+            release-build/appimagetool-x86_64.AppImage | sha256sum --check
+          chmod +x release-build/appimagetool-x86_64.AppImage
+          mkdir -p release-build/assets
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 \
+            release-build/appimagetool-x86_64.AppImage --no-appstream \
+            "$app_dir" "release-build/assets/TaskStack-$APP_VERSION-linux-x86_64.AppImage"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taskstack-linux-x64
+          path: release-build/assets/TaskStack-*-linux-x86_64.AppImage
+          if-no-files-found: error
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            architecture: x86_64
+          - runner: macos-15
+            architecture: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - id: version
+        name: Verify release version
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match VERSION $version" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Install build dependencies
+        run: python -m pip install -r requirements.txt -r requirements-build.txt
+      - name: Build macOS application
+        run: python -m PyInstaller --noconfirm --clean --distpath release-build/dist --workpath release-build/work TaskManager.spec
+      - name: Create DMG
+        env:
+          APP_VERSION: ${{ steps.version.outputs.value }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          rm -f release-build/dist/TaskStack
+          rm -rf release-build/work
+          df -h .
+          mkdir -p release-build/assets
+          test -d release-build/dist/TaskStack.app
+          ls -la release-build/dist
+          mountpoint="$GITHUB_WORKSPACE/release-build/mount"
+          image="release-build/TaskStack.sparseimage"
+          mkdir -p "$mountpoint"
+          hdiutil create -quiet -size 1g -fs HFS+ -volname TaskStack -type SPARSE "$image"
+          hdiutil attach -quiet -nobrowse -mountpoint "$mountpoint" "$image"
+          cp -R release-build/dist/TaskStack.app "$mountpoint/TaskStack.app"
+          ln -s /Applications "$mountpoint/Applications"
+          hdiutil detach "$mountpoint"
+          hdiutil convert "$image" -quiet -format UDZO \
+            -o "release-build/assets/TaskStack-$APP_VERSION-macos-$ARCHITECTURE.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taskstack-macos-${{ matrix.architecture }}
+          path: release-build/assets/TaskStack-*-macos-${{ matrix.architecture }}.dmg
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: taskstack-*
+          path: release-assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-assets/*

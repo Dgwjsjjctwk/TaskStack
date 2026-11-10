@@ -863,7 +863,12 @@ class MainWindow(QMainWindow):
         self.heartbeat_timer.start(5000)
 
     def init_tray(self):
+        self.tray_available = QSystemTrayIcon.isSystemTrayAvailable()
         self.tray_icon = QSystemTrayIcon(self)
+        if not self.tray_available:
+            logger.warning("Системный трей недоступен; приложение будет закрываться без сворачивания в трей.")
+            return
+
         self.tray_icon.setIcon(self.windowIcon())
         
         tray_menu = QMenu()
@@ -1235,16 +1240,19 @@ class MainWindow(QMainWindow):
         msg = QMessageBox(self)
         msg.setWindowTitle("Закрытие приложения" if self.current_lang == "ru" else "Closing Application")
         msg.setText("Что вы хотите сделать с приложением?" if self.current_lang == "ru" else "What would you like to do?")
-        msg.setInformativeText("Вы можете свернуть его в системный трей или закрыть полностью." if self.current_lang == "ru" else "You can minimize it to the system tray or close completely.")
-        
-        tray_btn = msg.addButton("Свернуть в трей" if self.current_lang == "ru" else "Minimize to Tray", QMessageBox.ButtonRole.ActionRole)
+        if self.tray_available:
+            msg.setInformativeText("Вы можете свернуть его в системный трей или закрыть полностью." if self.current_lang == "ru" else "You can minimize it to the system tray or close completely.")
+            tray_btn = msg.addButton("Свернуть в трей" if self.current_lang == "ru" else "Minimize to Tray", QMessageBox.ButtonRole.ActionRole)
+        else:
+            msg.setInformativeText("Системный трей недоступен. Вы можете закрыть приложение." if self.current_lang == "ru" else "The system tray is unavailable. You can close the application.")
+            tray_btn = None
         close_btn = msg.addButton("Закрыть полностью" if self.current_lang == "ru" else "Close Completely", QMessageBox.ButtonRole.DestructiveRole)
         cancel_btn = msg.addButton("Отмена" if self.current_lang == "ru" else "Cancel", QMessageBox.ButtonRole.RejectRole)
         
         msg.exec()
         clicked = msg.clickedButton()
 
-        if clicked == tray_btn:
+        if tray_btn is not None and clicked == tray_btn:
             event.ignore()
             self.hide()
             self.tray_icon.showMessage(
