@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=TaskStack
+Comment=Desktop task manager
+Exec=TaskStack
+Icon=taskstack
+Type=Application
+Categories=Office;ProjectManagement;
+Terminal=false

@@ -1,4 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+
 from PyInstaller.utils.hooks import collect_all
 
 datas = []
@@ -29,11 +31,11 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='TaskManager',
+    name='TaskStack',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
@@ -43,3 +45,14 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
+if sys.platform == "darwin":
+    app = BUNDLE(
+        exe,
+        name="TaskStack.app",
+        bundle_identifier="com.taskstack.desktop",
+        info_plist={
+            "CFBundleDisplayName": "TaskStack",
+            "CFBundleName": "TaskStack",
+        },
+    )
