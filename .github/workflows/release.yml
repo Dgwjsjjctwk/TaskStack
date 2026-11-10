@@ -163,15 +163,18 @@ jobs:
           rm -rf release-build/work
           df -h .
           mkdir -p release-build/assets
-          mkdir -p release-build/dmg
           test -d release-build/dist/TaskStack.app
           ls -la release-build/dist
-          cp -R release-build/dist/TaskStack.app release-build/dmg/TaskStack.app
-          ln -s /Applications release-build/dmg/Applications
-          hdiutil create -volname TaskStack \
-            -srcfolder release-build/dmg \
-            -ov -format UDZO \
-            "release-build/assets/TaskStack-$APP_VERSION-macos-$ARCHITECTURE.dmg"
+          mountpoint="$GITHUB_WORKSPACE/release-build/mount"
+          image="release-build/TaskStack.sparseimage"
+          mkdir -p "$mountpoint"
+          hdiutil create -quiet -size 1g -fs HFS+ -volname TaskStack -type SPARSE "$image"
+          hdiutil attach -quiet -nobrowse -mountpoint "$mountpoint" "$image"
+          cp -R release-build/dist/TaskStack.app "$mountpoint/TaskStack.app"
+          ln -s /Applications "$mountpoint/Applications"
+          hdiutil detach "$mountpoint"
+          hdiutil convert "$image" -quiet -format UDZO \
+            -o "release-build/assets/TaskStack-$APP_VERSION-macos-$ARCHITECTURE.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: taskstack-macos-${{ matrix.architecture }}
