@@ -159,6 +159,9 @@ jobs:
           APP_VERSION: ${{ steps.version.outputs.value }}
           ARCHITECTURE: ${{ matrix.architecture }}
         run: |
+          rm -f release-build/dist/TaskStack
+          rm -rf release-build/work
+          df -h .
           mkdir -p release-build/assets
           mkdir -p release-build/dmg
           test -d release-build/dist/TaskStack.app
