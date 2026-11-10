@@ -1,6 +1,9 @@
 name: Build and publish desktop installers
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     tags:
       - "v*"
