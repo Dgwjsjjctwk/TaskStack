@@ -19,7 +19,7 @@ Desktop task manager built with Python and PyQt6: organize tasks by category, pr
 | macOS, Intel | `TaskStack-1.2.0-macos-x86_64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
 | macOS, Apple Silicon | `TaskStack-1.2.0-macos-arm64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
 
-DMG для macOS не подписаны и не нотарифицированы. При первом запуске macOS может показать подтверждение безопасности. Для подписанной публикации нужны учётные данные Apple Developer, которые не хранятся в этом репозитории.
+Приложения в DMG для macOS не подписаны и не нотарифицированы. При первом запуске macOS Gatekeeper может показать предупреждение. Для подписанной и нотарифицированной публикации нужны учётные данные Apple Developer, которые не настроены для этого проекта.
 
 При первом запуске настройки сохраняются в пользовательские папки операционной системы. Старый `config.json` из прежней рабочей папки копируется в новое расположение без удаления оригинала. Настройки окна продолжают храниться через стандартный для платформы механизм `QSettings`.
 
@@ -99,7 +99,7 @@ Download the installer for your platform from [GitHub Releases](https://github.c
 | macOS, Intel | `TaskStack-1.2.0-macos-x86_64.dmg` | Open the DMG and drag TaskStack to Applications. |
 | macOS, Apple Silicon | `TaskStack-1.2.0-macos-arm64.dmg` | Open the DMG and drag TaskStack to Applications. |
 
-The macOS DMGs are not code-signed or notarized. macOS may show a security confirmation on first launch. Signed distribution requires Apple Developer credentials, which are not stored in this repository.
+The apps in the macOS DMGs are not code-signed or notarized. macOS Gatekeeper may show a warning on first launch. Signed and notarized distribution requires Apple Developer credentials, which are not configured for this project.
 
 On first launch, settings are stored in the operating system's per-user application folders. An existing `config.json` in the old working directory is copied to the new location without removing the original. Window settings continue to use the platform's standard `QSettings` storage.
 
