@@ -1,5 +1,25 @@
 # Changelog / История изменений
 
+## 1.3.0 — 2026-11-13
+
+### Русский
+
+- Добавлен удалённый MCP endpoint `/mcp` на существующем API TaskStack с транспортом Streamable HTTP и OAuth 2.1/PKCE.
+- MCP-клиенты получают отдельное согласие и ограниченные разрешения для каждой учётной записи TaskStack; доступ можно отозвать в настройках подключений.
+- Добавлены инструменты создания, чтения, изменения и удаления задач с соблюдением существующих правил владения и совместного доступа.
+- Удаление требует отдельного подтверждения пользователем на странице TaskStack; одного вызова MCP недостаточно.
+- Добавлены инструкция по подключению и описание проверенной и ожидаемой совместимости. Внешние AI-клиенты и PostgreSQL не проходили end-to-end проверку; доступность MCP на production зависит от развёртывания обновлённого API.
+- Сохранены настольное приложение и установщики для Windows x64, Linux x64 (AppImage), macOS Intel и Apple Silicon.
+
+### English
+
+- Added a remote MCP endpoint at `/mcp` to the existing TaskStack API, using Streamable HTTP and OAuth 2.1/PKCE.
+- MCP clients receive separate, scoped consent for each TaskStack account; users can revoke access from connected-client settings.
+- Added tools to create, read, update, and delete tasks while preserving existing ownership and sharing rules.
+- Deletion requires separate user approval on a TaskStack page; an MCP call alone cannot delete a task.
+- Added setup instructions and documented tested versus expected compatibility. Third-party AI clients and PostgreSQL have not been tested end to end; production MCP availability depends on deploying the updated API.
+- Preserved the desktop app and installers for Windows x64, Linux x64 (AppImage), macOS Intel, and Apple Silicon.
+
 ## 1.2.0 — 2026-11-10
 
 ### Русский

@@ -1,6 +1,6 @@
 # TaskStack Remote MCP Capability Map
 
-Baseline: released GitHub `main` v1.2.0. This work adds the 1.3 feature only; it does not change release metadata or deploy the service.
+Baseline: released GitHub `main` v1.2.0. The v1.3 feature and release metadata are prepared; production deployment remains separate.
 
 | Module id | Responsibility | Depends on |
 |---|---|---|

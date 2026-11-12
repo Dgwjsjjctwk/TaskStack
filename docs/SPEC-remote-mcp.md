@@ -4,7 +4,7 @@
 
 Add a remote MCP endpoint to the existing TaskStack FastAPI API so a user can authorize an MCP-capable AI client with their existing TaskStack account and a distinct, revocable consent grant. The MCP server exposes task create, list/read, update, and safely confirmed delete operations while preserving TaskStack's per-user visibility and sharing rules.
 
-The implementation starts from released v1.2.0. Version, changelog, tags, release assets, and production deployment are explicitly out of scope until the user requests release preparation.
+The implementation started from released v1.2.0. Release metadata and changelog are updated for v1.3.0 at the user's request. Production deployment remains a separate operational action.
 
 ## Capability map
 
