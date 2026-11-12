@@ -533,7 +533,8 @@ def create_oauth_router(
         if pending is None:
             return _error("invalid_request", status_code=400)
 
-        user = authenticate_user_credentials(
+        user = await to_thread.run_sync(
+            authenticate_user_credentials,
             form.get("username", ""), form.get("password", "")
         )
         if user is None:

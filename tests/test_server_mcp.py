@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import html
@@ -209,14 +210,31 @@ class McpOAuthFlowTests(unittest.TestCase):
                 ("mcp-user", server.hash_password("correct horse battery staple")),
             )
 
-        login = self.client.post(
-            "/oauth/authorize/login",
-            data={
-                **pending,
-                "username": "mcp-user",
-                "password": "correct horse battery staple",
-            },
-        )
+        authentication_event_loop_states = []
+        authenticate = server._authenticate_user_credentials
+
+        def record_authentication_context(conn, username, password):
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                authentication_event_loop_states.append(False)
+            else:
+                authentication_event_loop_states.append(True)
+            return authenticate(conn, username, password)
+
+        with patch.object(
+            server, "_authenticate_user_credentials", record_authentication_context
+        ):
+            login = self.client.post(
+                "/oauth/authorize/login",
+                data={
+                    **pending,
+                    "username": "mcp-user",
+                    "password": "correct horse battery staple",
+                },
+            )
+
+        self.assertEqual(authentication_event_loop_states, [False])
         self.assertEqual(login.status_code, 200)
         self.assertIn("TaskStack OAuth integration test", login.text)
         self.assertIn("http://127.0.0.1:49152/oauth/callback", login.text)
