@@ -1,5 +1,5 @@
 import base64
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 import hashlib
 import hmac
 import os
@@ -12,6 +12,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
+from mcp_oauth import create_oauth_router, public_issuer
 
 DATABASE_PATH = os.environ.get("TASKSTACK_DB_PATH", "server_tasks.db")
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -40,7 +41,9 @@ def _postgres_sql(statement: str) -> str:
     if ignore_conflicts:
         sql += " ON CONFLICT DO NOTHING"
     elif re.match(
-        r"INSERT\s+INTO\s+(users|groups|tasks)\b", sql, flags=re.IGNORECASE
+        r"INSERT\s+INTO\s+(users|groups|tasks|mcp_oauth_grants)\b",
+        sql,
+        flags=re.IGNORECASE,
     ):
         sql += " RETURNING id"
     return sql
@@ -64,6 +67,10 @@ class _PostgresCursor:
 
     def fetchall(self):
         return self._cursor.fetchall()
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
 
     @property
     def lastrowid(self):
@@ -211,6 +218,108 @@ def init_db():
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS mcp_oauth_clients (
+                client_id TEXT PRIMARY KEY,
+                client_name TEXT NOT NULL,
+                redirect_uris TEXT NOT NULL,
+                grant_types TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS mcp_oauth_authorization_requests (
+                request_id_hash TEXT PRIMARY KEY,
+                client_id TEXT NOT NULL,
+                redirect_uri TEXT NOT NULL,
+                state TEXT NOT NULL,
+                resource TEXT NOT NULL,
+                scopes TEXT NOT NULL,
+                code_challenge TEXT NOT NULL,
+                csrf_token_hash TEXT NOT NULL,
+                user_id INTEGER,
+                status TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(client_id) REFERENCES mcp_oauth_clients(client_id)
+                    ON DELETE CASCADE,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS mcp_oauth_grants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_id TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                resource TEXT NOT NULL,
+                scopes TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                FOREIGN KEY(client_id) REFERENCES mcp_oauth_clients(client_id)
+                    ON DELETE CASCADE,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS mcp_oauth_codes (
+                code_hash TEXT PRIMARY KEY,
+                grant_id INTEGER NOT NULL,
+                client_id TEXT NOT NULL,
+                redirect_uri TEXT NOT NULL,
+                resource TEXT NOT NULL,
+                code_challenge TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                consumed_at INTEGER,
+                FOREIGN KEY(grant_id) REFERENCES mcp_oauth_grants(id)
+                    ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS mcp_oauth_access_tokens (
+                token_hash TEXT PRIMARY KEY,
+                grant_id INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                revoked_at INTEGER,
+                FOREIGN KEY(grant_id) REFERENCES mcp_oauth_grants(id)
+                    ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS mcp_oauth_refresh_tokens (
+                token_hash TEXT PRIMARY KEY,
+                grant_id INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                consumed_at INTEGER,
+                revoked_at INTEGER,
+                FOREIGN KEY(grant_id) REFERENCES mcp_oauth_grants(id)
+                    ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS mcp_task_delete_confirmations (
+                confirmation_hash TEXT PRIMARY KEY,
+                task_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                task_snapshot_hash TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                consumed_at INTEGER,
+                FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS mcp_task_delete_approvals (
+                approval_hash TEXT PRIMARY KEY,
+                confirmation_hash TEXT NOT NULL UNIQUE,
+                csrf_token_hash TEXT NOT NULL,
+                status TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                approved_at INTEGER,
+                FOREIGN KEY(confirmation_hash)
+                REFERENCES mcp_task_delete_confirmations(confirmation_hash)
+                ON DELETE CASCADE
+            )
+        """)
 
 
 def hash_password(password: str) -> str:
@@ -244,6 +353,30 @@ def verify_password(password: str, stored_hash: str) -> tuple[bool, bool]:
         return hmac.compare_digest(actual, expected), iterations < PASSWORD_HASH_ITERATIONS
     except (ValueError, TypeError):
         return False, False
+
+
+def _authenticate_user_credentials(conn, username: str, password: str):
+    row = conn.execute(
+        "SELECT id, username, password FROM users WHERE username = ?",
+        (username.strip(),),
+    ).fetchone()
+    if row is None:
+        return None
+
+    valid, needs_upgrade = verify_password(password, row["password"])
+    if not valid:
+        return None
+    if needs_upgrade:
+        conn.execute(
+            "UPDATE users SET password = ? WHERE id = ?",
+            (hash_password(password), row["id"]),
+        )
+    return {"id": row["id"], "username": row["username"]}
+
+
+def authenticate_mcp_user(username: str, password: str):
+    with connect_db() as conn:
+        return _authenticate_user_credentials(conn, username, password)
 
 
 def issue_session(conn, user_id: int) -> str:
@@ -393,24 +526,14 @@ def register_user(user: UserRegisterModel):
 @app.post("/login")
 def login_user(user: UserRegisterModel):
     with connect_db() as conn:
-        row = conn.execute(
-            "SELECT id, username, password FROM users WHERE username = ?",
-            (user.username.strip(),),
-        ).fetchone()
-        if row is None:
+        authenticated_user = _authenticate_user_credentials(
+            conn, user.username, user.password
+        )
+        if authenticated_user is None:
             raise HTTPException(status_code=401, detail="Неверное имя пользователя или пароль")
-
-        valid, needs_upgrade = verify_password(user.password, row["password"])
-        if not valid:
-            raise HTTPException(status_code=401, detail="Неверное имя пользователя или пароль")
-        if needs_upgrade:
-            conn.execute(
-                "UPDATE users SET password = ? WHERE id = ?",
-                (hash_password(user.password), row["id"]),
-            )
-        token = issue_session(conn, row["id"])
-        username = row["username"]
-        user_id = row["id"]
+        token = issue_session(conn, authenticated_user["id"])
+        username = authenticated_user["username"]
+        user_id = authenticated_user["id"]
 
     return {
         "id": user_id,
@@ -578,27 +701,136 @@ def add_task(task: TaskModel, current_user: CurrentUser):
     return {"id": task_id, "message": "Задача добавлена и расшарена!"}
 
 
+def update_task_fields(task_id: int, updates: dict, current_user: dict):
+    allowed_fields = {"title", "status", "priority", "category", "deadline"}
+    fields = {key: value for key, value in updates.items() if value is not None}
+    if not fields or set(fields) - allowed_fields:
+        raise HTTPException(status_code=400, detail="No valid task fields to update")
+    if "title" in fields:
+        if not isinstance(fields["title"], str) or not fields["title"].strip():
+            raise HTTPException(status_code=400, detail="Task title cannot be empty")
+        fields["title"] = fields["title"].strip()
+    if "status" in fields and fields["status"] not in (0, 1):
+        raise HTTPException(status_code=400, detail="Task status must be 0 or 1")
+    for field in ("priority", "category", "deadline"):
+        if field in fields and not isinstance(fields[field], str):
+            raise HTTPException(status_code=400, detail=f"{field} must be text")
+
+    with connect_db() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if row is None or not can_access_task(
+            conn.cursor(), task_id, current_user["id"]
+        ):
+            raise HTTPException(status_code=404, detail="Задача не найдена")
+        if row["user_id"] != current_user["id"] and set(fields) != {"status"}:
+            raise HTTPException(
+                status_code=403,
+                detail="Only the task owner can update task details",
+            )
+        assignments = ", ".join(f"{field} = ?" for field in fields)
+        conn.execute(
+            f"UPDATE tasks SET {assignments} WHERE id = ?",
+            (*fields.values(), task_id),
+        )
+
+
 @app.put("/tasks/{task_id}/status")
 def update_task_status(task_id: int, task_update: TaskUpdateModel, current_user: CurrentUser):
-    with connect_db() as conn:
-        if not can_access_task(conn.cursor(), task_id, current_user["id"]):
-            raise HTTPException(status_code=404, detail="Задача не найдена")
-        conn.execute(
-            "UPDATE tasks SET status = ? WHERE id = ?",
-            (task_update.status, task_id),
-        )
+    update_task_fields(task_id, {"status": task_update.status}, current_user)
     return {"message": "Статус обновлен"}
 
 
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: int, current_user: CurrentUser):
     with connect_db() as conn:
-        row = conn.execute(
-            "SELECT user_id FROM tasks WHERE id = ?", (task_id,)
-        ).fetchone()
-        if row is None or row["user_id"] != current_user["id"]:
-            raise HTTPException(status_code=404, detail="Задача не найдена")
+        delete_owned_task(conn, task_id, current_user["id"])
+    return {"message": "Задача удалена"}
+
+
+def delete_owned_task(
+    conn, task_id: int, user_id: int, expected_snapshot=None
+):
+    if expected_snapshot is not None:
+        snapshot_fields = (
+            "title",
+            "status",
+            "priority",
+            "category",
+            "deadline",
+            "author_username",
+        )
+        null_safe_operator = "IS NOT DISTINCT FROM" if DATABASE_URL else "IS"
+        predicates = ["id = ?", "user_id = ?"]
+        parameters = [task_id, user_id]
+        for field in snapshot_fields:
+            predicates.append(f"{field} {null_safe_operator} ?")
+            parameters.append(expected_snapshot[field])
+        deleted = conn.execute(
+            f"DELETE FROM tasks WHERE {' AND '.join(predicates)}",
+            parameters,
+        )
+        if deleted.rowcount != 1:
+            raise HTTPException(
+                status_code=409,
+                detail="Task changed after preview; prepare a new deletion confirmation.",
+            )
         conn.execute("DELETE FROM task_shares WHERE task_id = ?", (task_id,))
         conn.execute("DELETE FROM task_group_shares WHERE task_id = ?", (task_id,))
-        conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-    return {"message": "Задача удалена"}
+        return
+
+    row = conn.execute(
+        "SELECT user_id FROM tasks WHERE id = ?", (task_id,)
+    ).fetchone()
+    if row is None or row["user_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+    conn.execute("DELETE FROM task_shares WHERE task_id = ?", (task_id,))
+    conn.execute("DELETE FROM task_group_shares WHERE task_id = ?", (task_id,))
+    conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+
+
+app.include_router(
+    create_oauth_router(connect_db, authenticate_mcp_user, get_current_user)
+)
+
+from mcp_tasks import (
+    MCPTransportSecurityGuard,
+    create_delete_confirmation_router,
+    create_mcp_server,
+    create_transport_security,
+)
+
+_mcp_issuer = public_issuer()
+app.include_router(
+    create_delete_confirmation_router(connect_db, authenticate_mcp_user)
+)
+_mcp_transport_security = create_transport_security(_mcp_issuer)
+mcp_server = create_mcp_server(
+    connect_db,
+    get_tasks,
+    add_task,
+    update_task_fields,
+    delete_owned_task,
+    TaskModel,
+    _mcp_issuer,
+)
+mcp_http_app = mcp_server.streamable_http_app(
+    streamable_http_path="/mcp",
+    json_response=True,
+    transport_security=_mcp_transport_security,
+    host="0.0.0.0",
+)
+mcp_http_app = MCPTransportSecurityGuard(mcp_http_app, _mcp_transport_security)
+_existing_lifespan = app.router.lifespan_context
+
+
+@asynccontextmanager
+async def _app_lifespan(application):
+    async with _existing_lifespan(application):
+        async with mcp_server.session_manager.run():
+            yield
+
+
+app.router.lifespan_context = _app_lifespan
+app.mount("/", mcp_http_app)
