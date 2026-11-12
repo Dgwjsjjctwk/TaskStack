@@ -33,7 +33,7 @@ class PackagingTests(unittest.TestCase):
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-        self.assertEqual(version, "1.2.0")
+        self.assertEqual(version, "1.3.0")
         self.assertIn(f"## {version}", changelog)
         self.assertIn(f"Version: {version}", readme)
         self.assertIn("Установка", readme)

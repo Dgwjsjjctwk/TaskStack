@@ -4,7 +4,7 @@
 
 Desktop task manager built with Python and PyQt6: organize tasks by category, priority, and deadline; search; share tasks and groups; pin the window; and use the system tray when the desktop provides one.
 
-**Версия / Version: 1.2.0**
+**Версия / Version: 1.3.0**
 
 ## Установка
 
@@ -14,10 +14,10 @@ Desktop task manager built with Python and PyQt6: organize tasks by category, pr
 
 | Платформа | Файл | Установка и запуск |
 | --- | --- | --- |
-| Windows 10/11, x64 | `TaskStack-Setup-1.2.0-win-x64.exe` | Запустите Setup, затем откройте TaskStack из меню «Пуск» или с рабочего стола. |
-| Linux, x64 | `TaskStack-1.2.0-linux-x86_64.AppImage` | Выполните `chmod +x TaskStack-*.AppImage`, затем `./TaskStack-*.AppImage`. |
-| macOS, Intel | `TaskStack-1.2.0-macos-x86_64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
-| macOS, Apple Silicon | `TaskStack-1.2.0-macos-arm64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
+| Windows 10/11, x64 | `TaskStack-Setup-1.3.0-win-x64.exe` | Запустите Setup, затем откройте TaskStack из меню «Пуск» или с рабочего стола. |
+| Linux, x64 | `TaskStack-1.3.0-linux-x86_64.AppImage` | Выполните `chmod +x TaskStack-*.AppImage`, затем `./TaskStack-*.AppImage`. |
+| macOS, Intel | `TaskStack-1.3.0-macos-x86_64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
+| macOS, Apple Silicon | `TaskStack-1.3.0-macos-arm64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
 
 Приложения в DMG для macOS не подписаны и не нотарифицированы. При первом запуске macOS Gatekeeper может показать предупреждение. Для подписанной и нотарифицированной публикации нужны учётные данные Apple Developer, которые не настроены для этого проекта.
 
@@ -67,7 +67,21 @@ python -m pip install -r requirements-server.txt
 python -m uvicorn server:app --host 127.0.0.1 --port 8000
 ```
 
-Для локального API SQLite используется по умолчанию. Для размещённого сервиса укажите `DATABASE_URL` с адресом PostgreSQL в секретах/переменных среды хостинг-провайдера и задайте `TASKSTACK_REQUIRE_DATABASE_URL=true`, чтобы запретить переход на эфемерную SQLite. Не добавляйте строки подключения и учётные данные в git. Перед сетевым доступом настройте HTTPS на платформе или reverse proxy. Этот выпуск не добавляет функции API и не выполняет миграцию данных; локальная база SQLite автоматически не переносится.
+Локальный MCP использует `http://127.0.0.1:8000` как публичный issuer. Если сервер запущен на другом хосте или порту, задайте `TASKSTACK_PUBLIC_URL` точно равным адресу, который использует MCP-клиент, чтобы OAuth и проверка audience совпадали.
+
+Для локального API SQLite используется по умолчанию. Для размещённого сервиса укажите `DATABASE_URL` с адресом PostgreSQL в секретах/переменных среды хостинг-провайдера и задайте `TASKSTACK_REQUIRE_DATABASE_URL=true`, чтобы запретить переход на эфемерную SQLite. Не добавляйте строки подключения и учётные данные в git. Перед сетевым доступом настройте HTTPS на платформе или reverse proxy. Этот выпуск добавляет MCP-инструменты API, но не мигрирует данные; локальная база SQLite автоматически не переносится.
+
+### Удалённый MCP
+
+В версии 1.3.0 добавлен MCP endpoint в существующий API. Он будет доступен на production-сервисе после развёртывания обновлённого API; ожидаемый URL: `https://taskstack-o9vw.onrender.com/mcp` (если публичный URL сервиса не изменится). Для Claude Code клиент настраивается на URL endpoint, например:
+
+```sh
+claude mcp add --transport http taskstack https://taskstack-o9vw.onrender.com/mcp
+```
+
+Авторизация проходит на странице TaskStack: войдите существующей учётной записью и отдельно подтвердите доступ для каждого MCP-клиента. Не помещайте пароль или скопированный bearer token в конфигурацию клиента. Разрешения ограничиваются чтением, записью и удалением; для удаления клиент должен показать preview и ссылку подтверждения. Пользователь открывает ссылку, повторно входит в TaskStack и подтверждает удаление именно этой задачи; один MCP-вызов `confirm=true` без такого действия сервер отклоняет.
+
+**Совместимость:** проверены OAuth-поток, Streamable HTTP handshake и вызовы tools через официальный MCP Python SDK 2.3.0 с FastAPI TestClient; сторонние приложения пока не тестировались. Claude Code документирует удалённые HTTP-серверы и OAuth, поэтому ожидается совместимость, но конкретная версия клиента не проверялась. OpenAI Responses API документирует удалённые MCP-серверы, однако его API-вызов требует передавать access token приложением; безопасная пользовательская OAuth-интеграция и приложение ChatGPT не проверялись. Документация DeepSeek описывает API function calling, но не нативный удалённый MCP-клиент; прямую совместимость DeepSeek API не заявляем. Другие клиенты ожидаются совместимыми только если поддерживают Streamable HTTP и стандартное OAuth-обнаружение/PKCE.
 
 ### Локальная сборка установщиков
 
@@ -84,7 +98,7 @@ python -m PyInstaller --noconfirm --clean --distpath release-build\dist --workpa
 python -m PyInstaller --noconfirm --clean --distpath release-build/dist --workpath release-build/work TaskManager.spec
 ```
 
-Для локальной сборки Windows Setup установите Inno Setup и выполните `ISCC.exe /DAppVersion=1.2.0 packaging\windows\TaskStack.iss` после сборки executable. GitHub Actions упаковывает Windows executable с помощью Inno Setup и собирает Linux/macOS на соответствующих runner-ах. Linux AppImage предназначен для x64; DMG собираются отдельно для Intel и Apple Silicon.
+Для локальной сборки Windows Setup установите Inno Setup и выполните `ISCC.exe /DAppVersion=1.3.0 packaging\windows\TaskStack.iss` после сборки executable. GitHub Actions упаковывает Windows executable с помощью Inno Setup и собирает Linux/macOS на соответствующих runner-ах. Linux AppImage предназначен для x64; DMG собираются отдельно для Intel и Apple Silicon.
 
 ## Installation
 
@@ -94,10 +108,10 @@ Download the installer for your platform from [GitHub Releases](https://github.c
 
 | Platform | File | Install and launch |
 | --- | --- | --- |
-| Windows 10/11, x64 | `TaskStack-Setup-1.2.0-win-x64.exe` | Run Setup, then launch TaskStack from the Start menu or desktop shortcut. |
-| Linux, x64 | `TaskStack-1.2.0-linux-x86_64.AppImage` | Run `chmod +x TaskStack-*.AppImage`, then `./TaskStack-*.AppImage`. |
-| macOS, Intel | `TaskStack-1.2.0-macos-x86_64.dmg` | Open the DMG and drag TaskStack to Applications. |
-| macOS, Apple Silicon | `TaskStack-1.2.0-macos-arm64.dmg` | Open the DMG and drag TaskStack to Applications. |
+| Windows 10/11, x64 | `TaskStack-Setup-1.3.0-win-x64.exe` | Run Setup, then launch TaskStack from the Start menu or desktop shortcut. |
+| Linux, x64 | `TaskStack-1.3.0-linux-x86_64.AppImage` | Run `chmod +x TaskStack-*.AppImage`, then `./TaskStack-*.AppImage`. |
+| macOS, Intel | `TaskStack-1.3.0-macos-x86_64.dmg` | Open the DMG and drag TaskStack to Applications. |
+| macOS, Apple Silicon | `TaskStack-1.3.0-macos-arm64.dmg` | Open the DMG and drag TaskStack to Applications. |
 
 The apps in the macOS DMGs are not code-signed or notarized. macOS Gatekeeper may show a warning on first launch. Signed and notarized distribution requires Apple Developer credentials, which are not configured for this project.
 
@@ -147,7 +161,21 @@ python -m pip install -r requirements-server.txt
 python -m uvicorn server:app --host 127.0.0.1 --port 8000
 ```
 
-Local API development uses SQLite by default. For a hosted service, set `DATABASE_URL` to a PostgreSQL connection string in the hosting provider's secret/environment settings and set `TASKSTACK_REQUIRE_DATABASE_URL=true` to prevent fallback to ephemeral SQLite. Do not commit connection strings or credentials. Configure HTTPS at the hosting platform or reverse proxy before allowing network access. This release adds no API features or data migration; local SQLite data is not transferred automatically.
+Local MCP uses `http://127.0.0.1:8000` as its public issuer. If the server uses another host or port, set `TASKSTACK_PUBLIC_URL` to the exact address used by the MCP client so OAuth discovery and audience validation agree.
+
+Local API development uses SQLite by default. For a hosted service, set `DATABASE_URL` to a PostgreSQL connection string in the hosting provider's secret/environment settings and set `TASKSTACK_REQUIRE_DATABASE_URL=true` to prevent fallback to ephemeral SQLite. Do not commit connection strings or credentials. Configure HTTPS at the hosting platform or reverse proxy before allowing network access. This release adds remote MCP API tools without migrating existing data; local SQLite data is not transferred automatically.
+
+### Remote MCP
+
+Version 1.3.0 adds an MCP endpoint to the existing API. It will be available on the production service after the updated API is deployed; the expected endpoint is `https://taskstack-o9vw.onrender.com/mcp` (unless the service's public URL changes). For Claude Code, configure the endpoint URL, for example:
+
+```sh
+claude mcp add --transport http taskstack https://taskstack-o9vw.onrender.com/mcp
+```
+
+Authorization takes place on a TaskStack page: sign in with an existing account and approve a separate grant for each MCP client. Do not put a password or copied bearer token in client configuration. Access is scoped to read, write, and delete; for deletion, the client must show the preview and confirmation link. The user opens the link, signs into TaskStack again, and approves deletion of that exact task; an MCP `confirm=true` call without this action is rejected by the server.
+
+**Compatibility:** OAuth, the Streamable HTTP handshake, and tool calls are tested with the official MCP Python SDK 2.3.0 and FastAPI TestClient; third-party applications have not been tested. Claude Code documents remote HTTP servers and OAuth, so interoperability is expected but no specific client version was tested. The OpenAI Responses API documents remote MCP servers, but its API request requires the application to provide an access token; the per-user OAuth handoff and ChatGPT app have not been tested. DeepSeek documentation describes API function calling but not a native remote MCP client, so direct compatibility with the DeepSeek API is not claimed. Other clients are expected to interoperate only if they support Streamable HTTP and standard OAuth discovery/PKCE.
 
 ### Build installers locally
 
@@ -164,11 +192,11 @@ python -m PyInstaller --noconfirm --clean --distpath release-build\dist --workpa
 python -m PyInstaller --noconfirm --clean --distpath release-build/dist --workpath release-build/work TaskManager.spec
 ```
 
-To build Windows Setup locally, install Inno Setup and run `ISCC.exe /DAppVersion=1.2.0 packaging\windows\TaskStack.iss` after building the executable. GitHub Actions wraps the Windows executable with Inno Setup and builds Linux/macOS on their respective runners. The Linux AppImage is x64; DMGs are built separately for Intel and Apple Silicon.
+To build Windows Setup locally, install Inno Setup and run `ISCC.exe /DAppVersion=1.3.0 packaging\windows\TaskStack.iss` after building the executable. GitHub Actions wraps the Windows executable with Inno Setup and builds Linux/macOS on their respective runners. The Linux AppImage is x64; DMGs are built separately for Intel and Apple Silicon.
 
 ## Релизы / Releases
 
-Загрузки установщиков и заметки к выпуску / Installer downloads and release notes: [GitHub Releases](https://github.com/Dgwjsjjctwk/TaskStack/releases). Подробности версии 1.2.0 / See the [1.2.0 changelog](CHANGELOG.md).
+Загрузки установщиков и заметки к выпуску / Installer downloads and release notes: [GitHub Releases](https://github.com/Dgwjsjjctwk/TaskStack/releases). Подробности версии 1.3.0 / See the [1.3.0 changelog](CHANGELOG.md).
 
 ## Лицензия / License
 

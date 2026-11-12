@@ -12,6 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 _test_directory = tempfile.TemporaryDirectory()
 os.environ.pop("DATABASE_URL", None)
 os.environ["TASKSTACK_DB_PATH"] = os.path.join(_test_directory.name, "test.sqlite")
+os.environ["TASKSTACK_PUBLIC_URL"] = "http://127.0.0.1:8000"
 
 import server
 
