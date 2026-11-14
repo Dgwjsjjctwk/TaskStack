@@ -1,0 +1,100 @@
+name: Build Android APK
+
+# Kept separate from release.yml on purpose: the Android toolchain is newer and
+# a failure here must never block the desktop installers from being published.
+
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android.yml"
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Qt for Python version used for the Android wheels and the deploy tool.
+  PYSIDE_VERSION: "6.10.0"
+
+jobs:
+  android:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: version
+        name: Verify release version
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match VERSION $version" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Run client tests
+        run: python3 -m unittest tests.test_mobile_api tests.test_mobile_logic tests.test_mobile_strings
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Qt for Python tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "PySide6==${PYSIDE_VERSION}" qtpip
+
+      - name: Download Android wheels for PySide6 and shiboken6
+        run: |
+          mkdir -p android-wheels
+          cd android-wheels
+          qtpip download PySide6 --android --arch aarch64
+          ls -la
+
+      - name: Download Android NDK and SDK
+        run: |
+          git clone --depth 1 --branch "v${PYSIDE_VERSION}" https://code.qt.io/pyside/pyside-setup "$RUNNER_TEMP/pyside-setup"
+          python "$RUNNER_TEMP/pyside-setup/tools/cross_compile_android/main.py" \
+            --download-only --skip-update --auto-accept-license
+
+      - name: Build APK
+        working-directory: mobile
+        run: |
+          pyside6-android-deploy \
+            --name TaskStack \
+            --wheel-pyside "$(ls ../android-wheels/PySide6-*.whl | head -n 1)" \
+            --wheel-shiboken "$(ls ../android-wheels/shiboken6-*.whl | head -n 1)" \
+            --force
+          find . -name "*.apk" -print
+
+      - name: Name the APK
+        env:
+          APP_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          mkdir -p release-assets
+          apk="$(find mobile -name "*.apk" | head -n 1)"
+          test -n "$apk"
+          cp "$apk" "release-assets/TaskStack-${APP_VERSION}-android-aarch64.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taskstack-android-aarch64
+          path: release-assets/*.apk
+          if-no-files-found: error
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: release-assets/*.apk

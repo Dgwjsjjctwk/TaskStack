@@ -1,0 +1,17 @@
+[project]
+name = "taskstack-mobile"
+version = "1.4.0"
+requires-python = ">=3.11"
+
+# Files bundled into the Android app. pyside6-android-deploy reads this list
+# so that tests, caches and virtual environments stay out of the APK.
+[tool.pyside6-project]
+files = [
+    "main.py",
+    "backend.py",
+    "strings.py",
+    "taskstack_api.py",
+    "taskstack_logic.py",
+    "version.py",
+    "qml/Main.qml",
+]

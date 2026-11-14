@@ -1,5 +1,25 @@
 # Changelog / История изменений
 
+## 1.4.0 — 2026-11-14
+
+### Русский
+
+- Добавлено мобильное приложение для Android (`mobile/`, PySide6 и Qt Quick) с теми же учётными записями и тем же API, что у настольной версии.
+- Мобильный клиент: вход и регистрация, список задач с поиском, фильтрами и категориями, добавление задач со сроком и приоритетом, отметка выполнения, удаление (только владелец), совместный доступ пользователям и группам, создание групп, русский и английский язык, адрес сервера в настройках.
+- Сетевые запросы выполняются в фоне и не блокируют интерфейс; при истёкшей сессии выполняется выход с понятным сообщением.
+- Добавлен отдельный workflow `android.yml`, который собирает APK и прикладывает его к релизу; его сбой не мешает публикации настольных установщиков.
+- Не входит в мобильную версию: ИИ-задачи, трей, закрепление окна, офлайн-режим.
+- Сервер и настольное приложение не менялись.
+
+### English
+
+- Added an Android app (`mobile/`, PySide6 and Qt Quick) using the same accounts and API as the desktop app.
+- Mobile client: sign-in and registration, task list with search, filters and categories, adding tasks with deadline and priority, marking tasks complete, deletion (owner only), sharing with users and groups, creating groups, Russian and English, and a server address in Settings.
+- Network requests run in the background and never block the interface; an expired session signs the user out with a clear message.
+- Added a separate `android.yml` workflow that builds the APK and attaches it to the release; a failure there does not block the desktop installers.
+- Not included in the mobile app: AI tasks, tray, window pinning, offline mode.
+- The server and the desktop app are unchanged.
+
 ## 1.3.0 — 2026-11-13
 
 ### Русский

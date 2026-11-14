@@ -33,13 +33,28 @@ class PackagingTests(unittest.TestCase):
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-        self.assertEqual(version, "1.3.0")
+        self.assertEqual(version, "1.4.0")
         self.assertIn(f"## {version}", changelog)
         self.assertIn(f"Version: {version}", readme)
         self.assertIn("Установка", readme)
         self.assertIn("Installation", readme)
         self.assertIn("Сборка из исходного кода", readme)
         self.assertIn("Build from source", readme)
+
+    def test_android_build_is_separate_from_the_desktop_release(self):
+        android = (ROOT / ".github" / "workflows" / "android.yml").read_text(
+            encoding="utf-8"
+        )
+        desktop = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("pyside6-android-deploy", android)
+        self.assertIn("android-aarch64.apk", android)
+        self.assertNotIn("android", desktop.lower())
+        for name in ("main.py", "backend.py", "qml/Main.qml"):
+            with self.subTest(file=name):
+                self.assertTrue((ROOT / "mobile" / name).is_file())
 
     def test_platform_package_definitions_are_present(self):
         required_files = (

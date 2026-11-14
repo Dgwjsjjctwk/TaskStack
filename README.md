@@ -4,7 +4,7 @@
 
 Desktop task manager built with Python and PyQt6: organize tasks by category, priority, and deadline; search; share tasks and groups; pin the window; and use the system tray when the desktop provides one.
 
-**Версия / Version: 1.3.0**
+**Версия / Version: 1.4.0**
 
 ## Установка
 
@@ -14,10 +14,11 @@ Desktop task manager built with Python and PyQt6: organize tasks by category, pr
 
 | Платформа | Файл | Установка и запуск |
 | --- | --- | --- |
-| Windows 10/11, x64 | `TaskStack-Setup-1.3.0-win-x64.exe` | Запустите Setup, затем откройте TaskStack из меню «Пуск» или с рабочего стола. |
-| Linux, x64 | `TaskStack-1.3.0-linux-x86_64.AppImage` | Выполните `chmod +x TaskStack-*.AppImage`, затем `./TaskStack-*.AppImage`. |
-| macOS, Intel | `TaskStack-1.3.0-macos-x86_64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
-| macOS, Apple Silicon | `TaskStack-1.3.0-macos-arm64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
+| Windows 10/11, x64 | `TaskStack-Setup-1.4.0-win-x64.exe` | Запустите Setup, затем откройте TaskStack из меню «Пуск» или с рабочего стола. |
+| Linux, x64 | `TaskStack-1.4.0-linux-x86_64.AppImage` | Выполните `chmod +x TaskStack-*.AppImage`, затем `./TaskStack-*.AppImage`. |
+| macOS, Intel | `TaskStack-1.4.0-macos-x86_64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
+| macOS, Apple Silicon | `TaskStack-1.4.0-macos-arm64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
+| Android, ARM64 | `TaskStack-1.4.0-android-aarch64.apk` | Скачайте APK на телефон, разрешите установку из этого источника и откройте файл. |
 
 Приложения в DMG для macOS не подписаны и не нотарифицированы. При первом запуске macOS Gatekeeper может показать предупреждение. Для подписанной и нотарифицированной публикации нужны учётные данные Apple Developer, которые не настроены для этого проекта.
 
@@ -98,7 +99,7 @@ python -m PyInstaller --noconfirm --clean --distpath release-build\dist --workpa
 python -m PyInstaller --noconfirm --clean --distpath release-build/dist --workpath release-build/work TaskManager.spec
 ```
 
-Для локальной сборки Windows Setup установите Inno Setup и выполните `ISCC.exe /DAppVersion=1.3.0 packaging\windows\TaskStack.iss` после сборки executable. GitHub Actions упаковывает Windows executable с помощью Inno Setup и собирает Linux/macOS на соответствующих runner-ах. Linux AppImage предназначен для x64; DMG собираются отдельно для Intel и Apple Silicon.
+Для локальной сборки Windows Setup установите Inno Setup и выполните `ISCC.exe /DAppVersion=1.4.0 packaging\windows\TaskStack.iss` после сборки executable. GitHub Actions упаковывает Windows executable с помощью Inno Setup и собирает Linux/macOS на соответствующих runner-ах. Linux AppImage предназначен для x64; DMG собираются отдельно для Intel и Apple Silicon.
 
 ## Installation
 
@@ -108,10 +109,11 @@ Download the installer for your platform from [GitHub Releases](https://github.c
 
 | Platform | File | Install and launch |
 | --- | --- | --- |
-| Windows 10/11, x64 | `TaskStack-Setup-1.3.0-win-x64.exe` | Run Setup, then launch TaskStack from the Start menu or desktop shortcut. |
-| Linux, x64 | `TaskStack-1.3.0-linux-x86_64.AppImage` | Run `chmod +x TaskStack-*.AppImage`, then `./TaskStack-*.AppImage`. |
-| macOS, Intel | `TaskStack-1.3.0-macos-x86_64.dmg` | Open the DMG and drag TaskStack to Applications. |
-| macOS, Apple Silicon | `TaskStack-1.3.0-macos-arm64.dmg` | Open the DMG and drag TaskStack to Applications. |
+| Windows 10/11, x64 | `TaskStack-Setup-1.4.0-win-x64.exe` | Run Setup, then launch TaskStack from the Start menu or desktop shortcut. |
+| Linux, x64 | `TaskStack-1.4.0-linux-x86_64.AppImage` | Run `chmod +x TaskStack-*.AppImage`, then `./TaskStack-*.AppImage`. |
+| macOS, Intel | `TaskStack-1.4.0-macos-x86_64.dmg` | Open the DMG and drag TaskStack to Applications. |
+| macOS, Apple Silicon | `TaskStack-1.4.0-macos-arm64.dmg` | Open the DMG and drag TaskStack to Applications. |
+| Android, ARM64 | `TaskStack-1.4.0-android-aarch64.apk` | Download the APK to your phone, allow installing from this source, and open the file. |
 
 The apps in the macOS DMGs are not code-signed or notarized. macOS Gatekeeper may show a warning on first launch. Signed and notarized distribution requires Apple Developer credentials, which are not configured for this project.
 
@@ -192,11 +194,27 @@ python -m PyInstaller --noconfirm --clean --distpath release-build\dist --workpa
 python -m PyInstaller --noconfirm --clean --distpath release-build/dist --workpath release-build/work TaskManager.spec
 ```
 
-To build Windows Setup locally, install Inno Setup and run `ISCC.exe /DAppVersion=1.3.0 packaging\windows\TaskStack.iss` after building the executable. GitHub Actions wraps the Windows executable with Inno Setup and builds Linux/macOS on their respective runners. The Linux AppImage is x64; DMGs are built separately for Intel and Apple Silicon.
+To build Windows Setup locally, install Inno Setup and run `ISCC.exe /DAppVersion=1.4.0 packaging\windows\TaskStack.iss` after building the executable. GitHub Actions wraps the Windows executable with Inno Setup and builds Linux/macOS on their respective runners. The Linux AppImage is x64; DMGs are built separately for Intel and Apple Silicon.
+
+## Мобильное приложение (Android)
+
+[#мобильное-приложение-android](#мобильное-приложение-android)
+
+Версия 1.4.0 добавляет мобильный клиент для Android (папка `mobile/`) на PySide6 и Qt Quick. Он работает с тем же API и теми же учётными записями, что и настольное приложение: вход, задачи, категории, приоритеты, сроки, статус, удаление, совместный доступ пользователям и группам, русский и английский язык, адрес сервера в настройках. ИИ-задачи, трей и закрепление окна есть только в настольной версии. Для установки APK не нужны Python и сервер.
+
+Приложение требует связь с сервером: офлайн-режима нет. Для собственного сервера используйте HTTPS, потому что Android по умолчанию блокирует обычный HTTP. Подробности запуска на компьютере и сборки APK: [docs/MOBILE.md](docs/MOBILE.md).
+
+## Mobile app (Android)
+
+[#mobile-app-android](#mobile-app-android)
+
+Version 1.4.0 adds an Android client (the `mobile/` folder) built with PySide6 and Qt Quick. It uses the same API and the same accounts as the desktop app: sign-in, tasks, categories, priorities, deadlines, status, deletion, sharing with users and groups, Russian and English, and a server address in Settings. AI tasks, the tray and window pinning remain desktop-only. Installing the APK does not require Python or a server.
+
+The app needs a connection to the server; there is no offline mode. Use HTTPS for a self-hosted server, because Android blocks plain HTTP by default. See [docs/MOBILE.md](docs/MOBILE.md) for running it on a computer and building the APK.
 
 ## Релизы / Releases
 
-Загрузки установщиков и заметки к выпуску / Installer downloads and release notes: [GitHub Releases](https://github.com/Dgwjsjjctwk/TaskStack/releases). Подробности версии 1.3.0 / See the [1.3.0 changelog](CHANGELOG.md).
+Загрузки установщиков и заметки к выпуску / Installer downloads and release notes: [GitHub Releases](https://github.com/Dgwjsjjctwk/TaskStack/releases). Подробности версии 1.4.0 / See the [1.4.0 changelog](CHANGELOG.md).
 
 ## Лицензия / License
 

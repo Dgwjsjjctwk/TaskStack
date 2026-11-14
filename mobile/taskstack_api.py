@@ -1,0 +1,180 @@
+"""HTTP client for the TaskStack API.
+
+Pure standard library, no Qt imports: the same module works on desktop,
+on Android and in tests. Every call is synchronous; callers are responsible
+for running it off the UI thread.
+"""
+
+import json
+import socket
+import urllib.error
+import urllib.request
+
+DEFAULT_SERVER_URL = "https://taskstack-o9vw.onrender.com"
+
+
+class ApiError(Exception):
+    """The server answered with an HTTP error status."""
+
+    def __init__(self, status, detail):
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
+
+    @property
+    def is_unauthorized(self):
+        return self.status == 401
+
+
+class NetworkError(Exception):
+    """The server could not be reached or sent an unreadable answer."""
+
+
+def normalize_server_url(url):
+    url = (url or "").strip().rstrip("/")
+    if not url:
+        return DEFAULT_SERVER_URL
+    if "://" not in url:
+        url = "https://" + url
+    return url
+
+
+def _error_detail(error):
+    try:
+        body = json.loads(error.read().decode("utf-8"))
+        detail = body.get("detail")
+        if isinstance(detail, str) and detail:
+            return detail
+        if isinstance(detail, list) and detail:
+            # FastAPI validation errors: [{"msg": "...", ...}]
+            first = detail[0]
+            if isinstance(first, dict) and first.get("msg"):
+                return str(first["msg"])
+    except Exception:
+        pass
+    return f"HTTP {error.code}"
+
+
+class TaskStackClient:
+    def __init__(self, base_url=DEFAULT_SERVER_URL, token=None, timeout=10.0):
+        self.base_url = normalize_server_url(base_url)
+        self.token = token
+        self.timeout = timeout
+        self.user_id = None
+        self.username = None
+
+    # -- transport ---------------------------------------------------------
+
+    def _request(self, method, path, payload=None, timeout=None):
+        headers = {"Accept": "application/json"}
+        data = None
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        request = urllib.request.Request(
+            self.base_url + path, data=data, headers=headers, method=method
+        )
+        try:
+            with urllib.request.urlopen(
+                request, timeout=timeout or self.timeout
+            ) as response:
+                raw = response.read()
+        except urllib.error.HTTPError as error:
+            raise ApiError(error.code, _error_detail(error)) from None
+        except (urllib.error.URLError, socket.timeout, TimeoutError, OSError) as error:
+            reason = getattr(error, "reason", error)
+            raise NetworkError(str(reason)) from None
+        if not raw:
+            return None
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise NetworkError("Unreadable response from server") from None
+
+    # -- account -----------------------------------------------------------
+
+    def health(self):
+        return self._request("GET", "/health", timeout=5)
+
+    def register(self, username, password):
+        return self._request(
+            "POST", "/register", {"username": username, "password": password}
+        )
+
+    def login(self, username, password):
+        data = self._request(
+            "POST", "/login", {"username": username, "password": password}
+        )
+        token = (data or {}).get("access_token")
+        if not token:
+            raise NetworkError("Server did not return an access token")
+        self.token = token
+        self.user_id = data.get("id")
+        self.username = data.get("username")
+        return data
+
+    def restore_session(self, token, user_id, username):
+        self.token = token
+        self.user_id = user_id
+        self.username = username
+
+    def logout(self):
+        self.token = None
+        self.user_id = None
+        self.username = None
+
+    # -- tasks -------------------------------------------------------------
+
+    def list_tasks(self):
+        return self._request("GET", f"/tasks?user_id={int(self.user_id)}")
+
+    def add_task(
+        self,
+        title,
+        priority,
+        category,
+        deadline="",
+        shared_with_ids=(),
+        shared_with_group_ids=(),
+    ):
+        payload = {
+            "title": title,
+            "status": 0,
+            "priority": priority,
+            "category": category,
+            "deadline": deadline,
+            "user_id": int(self.user_id),
+            "author_username": self.username or "",
+            "shared_with_ids": list(shared_with_ids),
+            "shared_with_group_ids": list(shared_with_group_ids),
+        }
+        return self._request("POST", "/tasks", payload)
+
+    def set_task_status(self, task_id, completed):
+        return self._request(
+            "PUT", f"/tasks/{int(task_id)}/status", {"status": 1 if completed else 0}
+        )
+
+    def delete_task(self, task_id):
+        return self._request("DELETE", f"/tasks/{int(task_id)}")
+
+    # -- sharing -----------------------------------------------------------
+
+    def list_users(self):
+        return self._request("GET", f"/users?exclude_id={int(self.user_id)}")
+
+    def list_groups(self):
+        return self._request("GET", f"/groups?user_id={int(self.user_id)}")
+
+    def create_group(self, name, member_ids):
+        return self._request(
+            "POST",
+            "/groups",
+            {
+                "name": name,
+                "creator_id": int(self.user_id),
+                "member_ids": list(member_ids),
+            },
+        )
