@@ -1,8 +1,8 @@
 # TaskStack
 
-Настольный менеджер задач на Python и PyQt6: задачи по категориям, приоритетам и срокам, поиск, совместное использование задач и групп, закрепление окна и системный трей (если он доступен в рабочем окружении).
+Менеджер задач на Python: настольное приложение на PyQt6 (Windows, Linux, macOS) и мобильное приложение для Android на PySide6 и Qt Quick. Задачи по категориям, приоритетам и срокам, поиск, совместное использование задач и групп; в настольной версии также закрепление окна и системный трей (если он доступен в рабочем окружении).
 
-Desktop task manager built with Python and PyQt6: organize tasks by category, priority, and deadline; search; share tasks and groups; pin the window; and use the system tray when the desktop provides one.
+Task manager built with Python: a desktop app on PyQt6 (Windows, Linux, macOS) and an Android app on PySide6 and Qt Quick. Organize tasks by category, priority, and deadline; search; share tasks and groups; the desktop app also pins the window and uses the system tray when the desktop provides one.
 
 **Версия / Version: 1.4.0**
 
@@ -101,6 +101,29 @@ python -m PyInstaller --noconfirm --clean --distpath release-build/dist --workpa
 
 Для локальной сборки Windows Setup установите Inno Setup и выполните `ISCC.exe /DAppVersion=1.4.0 packaging\windows\TaskStack.iss` после сборки executable. GitHub Actions упаковывает Windows executable с помощью Inno Setup и собирает Linux/macOS на соответствующих runner-ах. Linux AppImage предназначен для x64; DMG собираются отдельно для Intel и Apple Silicon.
 
+## Мобильное приложение (Android)
+
+Версия 1.4.0 добавляет мобильный клиент для Android (папка `mobile/`). Он работает с тем же сервером и теми же учётными записями, что и настольное приложение, поэтому задачи синхронизируются между телефоном и компьютером.
+
+**Что есть в мобильном приложении:**
+
+- вход и регистрация; сессия сохраняется, пароль не хранится;
+- список задач с поиском, фильтрами (все, активные, завершённые) и категориями, счётчик выполненных и просроченных;
+- добавление задачи со сроком (быстрый выбор или ввод `гггг-мм-дд чч:мм`), приоритетом и категорией;
+- отметка выполнения, удаление (только владельцем), обновление по кнопке, свайпом вниз и при возвращении в приложение;
+- совместный доступ пользователям и группам, создание групп;
+- русский и английский язык, адрес сервера в настройках, индикатор доступности сервера.
+
+**Чего нет по сравнению с настольной версией:** ИИ-задач, системного трея и закрепления окна. Офлайн-режима нет: приложению нужна связь с сервером. Для собственного сервера используйте HTTPS, потому что Android по умолчанию блокирует обычный HTTP.
+
+**Как попробовать:**
+
+- установить APK `TaskStack-1.4.0-android-aarch64.apk` из [Releases](https://github.com/Dgwjsjjctwk/TaskStack/releases) (в телефоне разрешите установку из этого источника);
+- или запустить на компьютере: `python -m pip install PySide6` и `python mobile/main.py`;
+- проверка клиента без Qt и сети: `python -m unittest tests.test_mobile_api tests.test_mobile_logic tests.test_mobile_strings`.
+
+APK собирает отдельный workflow `.github/workflows/android.yml`; его сбой не мешает публикации установщиков для компьютеров. Подробности устройства приложения и сборки: [docs/MOBILE.md](docs/MOBILE.md) и [mobile/README.md](mobile/README.md).
+
 ## Installation
 
 ### Beginner installation
@@ -196,21 +219,28 @@ python -m PyInstaller --noconfirm --clean --distpath release-build/dist --workpa
 
 To build Windows Setup locally, install Inno Setup and run `ISCC.exe /DAppVersion=1.4.0 packaging\windows\TaskStack.iss` after building the executable. GitHub Actions wraps the Windows executable with Inno Setup and builds Linux/macOS on their respective runners. The Linux AppImage is x64; DMGs are built separately for Intel and Apple Silicon.
 
-## Мобильное приложение (Android)
-
-[#мобильное-приложение-android](#мобильное-приложение-android)
-
-Версия 1.4.0 добавляет мобильный клиент для Android (папка `mobile/`) на PySide6 и Qt Quick. Он работает с тем же API и теми же учётными записями, что и настольное приложение: вход, задачи, категории, приоритеты, сроки, статус, удаление, совместный доступ пользователям и группам, русский и английский язык, адрес сервера в настройках. ИИ-задачи, трей и закрепление окна есть только в настольной версии. Для установки APK не нужны Python и сервер.
-
-Приложение требует связь с сервером: офлайн-режима нет. Для собственного сервера используйте HTTPS, потому что Android по умолчанию блокирует обычный HTTP. Подробности запуска на компьютере и сборки APK: [docs/MOBILE.md](docs/MOBILE.md).
-
 ## Mobile app (Android)
 
-[#mobile-app-android](#mobile-app-android)
+Version 1.4.0 adds an Android client (the `mobile/` folder). It uses the same server and the same accounts as the desktop app, so tasks stay in sync between a phone and a computer.
 
-Version 1.4.0 adds an Android client (the `mobile/` folder) built with PySide6 and Qt Quick. It uses the same API and the same accounts as the desktop app: sign-in, tasks, categories, priorities, deadlines, status, deletion, sharing with users and groups, Russian and English, and a server address in Settings. AI tasks, the tray and window pinning remain desktop-only. Installing the APK does not require Python or a server.
+**What the mobile app has:**
 
-The app needs a connection to the server; there is no offline mode. Use HTTPS for a self-hosted server, because Android blocks plain HTTP by default. See [docs/MOBILE.md](docs/MOBILE.md) for running it on a computer and building the APK.
+- sign-in and registration; the session is remembered and the password is never stored;
+- a task list with search, filters (all, active, completed) and categories, plus counters for completed and overdue tasks;
+- adding a task with a deadline (quick picks or typing `yyyy-mm-dd hh:mm`), priority and category;
+- marking tasks complete, deleting them (owner only), refreshing with a button, a pull-down gesture, and when the app returns to the foreground;
+- sharing with users and groups, and creating groups;
+- Russian and English, a server address in Settings, and a server status indicator.
+
+**What it does not have compared with the desktop app:** AI tasks, the system tray, and window pinning. There is no offline mode: the app needs a connection to the server. Use HTTPS for a self-hosted server, because Android blocks plain HTTP by default.
+
+**How to try it:**
+
+- install the APK `TaskStack-1.4.0-android-aarch64.apk` from [Releases](https://github.com/Dgwjsjjctwk/TaskStack/releases) (allow installing from this source on your phone);
+- or run it on a computer: `python -m pip install PySide6`, then `python mobile/main.py`;
+- test the client without Qt or a network: `python -m unittest tests.test_mobile_api tests.test_mobile_logic tests.test_mobile_strings`.
+
+The APK is built by the separate `.github/workflows/android.yml` workflow; a failure there does not block the desktop installers. See [docs/MOBILE.md](docs/MOBILE.md) and [mobile/README.md](mobile/README.md) for how the app is organized and built.
 
 ## Релизы / Releases
 
