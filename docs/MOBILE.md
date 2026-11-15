@@ -50,7 +50,7 @@ python -m unittest tests.test_mobile_api tests.test_mobile_logic tests.test_mobi
 
 **Where to get the APK.** For a pull request or a manual run, open the run in the **Actions** tab and download the artifact `taskstack-android-aarch64` at the bottom of the page (a zip with the APK inside). For a `v*` tag the APK is also attached to the GitHub release.
 
-**Build status.** The workflow completes on GitHub Actions in about 6 minutes (a first build with Qt for Python 6.10.0 succeeded, but its APK closed right after launch; see the known limitations). The APK targets ARM64 phones (`arm64-v8a`), needs Android 5.0 or newer (API 21), declares the `INTERNET` permission, and bundles the Qt Quick Controls with the Material style that the interface uses. It has not yet been run on a device by the author of this change.
+**Build status.** The workflow completes on GitHub Actions in about 6 minutes (a first build with Qt for Python 6.10.0 succeeded, but its APK closed right after launch; see the known limitations). The APK targets ARM64 phones (`arm64-v8a`), needs Android 5.0 or newer (API 21), declares the `INTERNET` permission, and bundles the Qt Quick Controls with the Material style that the interface uses. **Checked on a device:** on a Samsung phone the app starts, signs in to the server, and a task created on the phone appears in the desktop app. Deleting, sharing, switching language and changing the server address have not been checked on a device yet.
 
 **Cosmetic limits of the generated APK.** The internal version name is `0.1` and the icon is the default Qt for Python one, because `pyside6-android-deploy` does not take them from `VERSION`. The package name is `org.taskstack.taskstack`.
 
