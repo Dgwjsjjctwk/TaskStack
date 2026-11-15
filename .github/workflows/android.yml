@@ -67,11 +67,12 @@ jobs:
         run: |
           git clone --depth 1 --branch "v${PYSIDE_VERSION}" https://code.qt.io/pyside/pyside-setup "$RUNNER_TEMP/pyside-setup"
           tool_dir="$RUNNER_TEMP/pyside-setup/tools/cross_compile_android"
-          # The helper imports GitPython (module "git") and a few other packages.
+          # The helper imports git (GitPython), jinja2, tqdm and packaging, but its
+          # requirements.txt does not list packaging.
           if [ -f "$tool_dir/requirements.txt" ]; then
             python -m pip install -r "$tool_dir/requirements.txt"
           fi
-          python -m pip install GitPython
+          python -m pip install GitPython packaging
           python "$tool_dir/main.py" --download-only --skip-update --auto-accept-license
 
       - name: Build APK

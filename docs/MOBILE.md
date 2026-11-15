@@ -52,12 +52,13 @@ The APK is signed with a debug key, which is fine for installing from a file. Pu
 
 ### Locally (Linux or macOS host only)
 
-Requirements from the Qt for Python documentation: Python 3.10+, JDK 17+, NDK r28c, SDK packages `platform-tools`, `platforms;android-35`, `build-tools;35.0.0`. The deployed app runs CPython 3.14.
+Requirements from the Qt for Python documentation: Python 3.10+, JDK 17+, NDK r27c (downloaded by the helper script), SDK packages `platform-tools`, `platforms;android-35`, `build-tools;35.0.0`. The deployed app runs CPython 3.14.
 
 ```bash
-python -m pip install PySide6==6.10.0 qtpip
+python -m pip install PySide6==6.10.0 qtpip packaging
 mkdir android-wheels && cd android-wheels && qtpip download PySide6 --android --arch aarch64 && cd ..
 git clone --branch v6.10.0 https://code.qt.io/pyside/pyside-setup
+python -m pip install -r pyside-setup/tools/cross_compile_android/requirements.txt
 python pyside-setup/tools/cross_compile_android/main.py --download-only --skip-update --auto-accept-license
 cd mobile
 pyside6-android-deploy --name TaskStack \
