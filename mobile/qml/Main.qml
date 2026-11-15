@@ -152,7 +152,7 @@ ApplicationWindow {
                     Button {
                         Layout.fillWidth: true
                         flat: true
-                        text: "⚙  " + txt("settings")
+                        text: txt("settings")
                         onClicked: settingsPopup.open()
                     }
                     BusyIndicator {
@@ -196,15 +196,13 @@ ApplicationWindow {
                             Layout.fillWidth: true
                         }
                         ToolButton {
-                            text: "⟳"
-                            font.pixelSize: 22
+                            text: txt("refresh")
+                            font.pixelSize: 13
                             onClicked: backend.refresh()
-                            ToolTip.visible: hovered
-                            ToolTip.text: txt("refresh")
                         }
                         ToolButton {
-                            text: "⚙"
-                            font.pixelSize: 20
+                            text: txt("settings")
+                            font.pixelSize: 13
                             onClicked: settingsPopup.open()
                         }
                     }
@@ -244,7 +242,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.leftMargin: 12
                     Layout.rightMargin: 12
-                    placeholderText: "🔍 " + txt("search")
+                    placeholderText: txt("search")
                     inputMethodHints: Qt.ImhNoPredictiveText
                     onTextChanged: window.applyFilter()
                 }
@@ -376,7 +374,7 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     font.pixelSize: 12
                                     color: card.modelData.overdue ? "#f85149" : window.mutedColor
-                                    text: "⏰ " + card.modelData.deadline
+                                    text: txt("deadline") + ": " + card.modelData.deadline
                                 }
                                 Label {
                                     visible: card.modelData.author !== "" || card.modelData.shared
@@ -386,16 +384,16 @@ ApplicationWindow {
                                     text: {
                                         var parts = []
                                         if (card.modelData.author !== "")
-                                            parts.push("👤 " + fill(txt("from_author"), { name: card.modelData.author }))
+                                            parts.push(fill(txt("from_author"), { name: card.modelData.author }))
                                         if (card.modelData.shared)
-                                            parts.push("👥 " + txt("shared_badge"))
+                                            parts.push(txt("shared_badge"))
                                         return parts.join("  ·  ")
                                     }
                                 }
                             }
                             ToolButton {
-                                text: "🗑"
-                                font.pixelSize: 18
+                                text: "×"
+                                font.pixelSize: 28
                                 onClicked: {
                                     deletePopup.taskId = card.modelData.id
                                     deletePopup.taskTitle = card.modelData.title
@@ -503,8 +501,8 @@ ApplicationWindow {
             Button {
                 Layout.fillWidth: true
                 text: (window.selectedUsers.length + window.selectedGroups.length) > 0
-                      ? "👥 " + fill(txt("share_selected"), { n: window.selectedUsers.length + window.selectedGroups.length })
-                      : "👥 " + txt("share")
+                      ? fill(txt("share_selected"), { n: window.selectedUsers.length + window.selectedGroups.length })
+                      : txt("share")
                 highlighted: (window.selectedUsers.length + window.selectedGroups.length) > 0
                 onClicked: {
                     backend.loadSharing()
@@ -603,7 +601,7 @@ ApplicationWindow {
                         delegate: CheckBox {
                             required property var modelData
                             Layout.fillWidth: true
-                            text: "👥 " + modelData.name
+                            text: modelData.name
                             checked: window.selectedGroups.indexOf(modelData.id) >= 0
                             onToggled: window.selectedGroups = window.toggled(window.selectedGroups, modelData.id, checked)
                         }

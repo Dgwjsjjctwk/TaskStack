@@ -1,5 +1,11 @@
 import json
+import os
+import re
+import shutil
+import ssl
+import subprocess
 import sys
+import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -131,9 +137,99 @@ class TaskStackClientTests(unittest.TestCase):
         self.assertEqual(normalize_server_url("http://10.0.2.2:8000/"), "http://10.0.2.2:8000")
 
     def test_ssl_context_survives_missing_android_certificate_dirs(self):
-        context = build_ssl_context(("/no/such/dir", "/also/missing"))
+        context, count = build_ssl_context(("/no/such/dir", "/also/missing"))
+        self.assertEqual(count, 0)
         self.assertTrue(context.check_hostname)
-        self.assertEqual(context.verify_mode, __import__("ssl").CERT_REQUIRED)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+
+    def test_ssl_context_loads_certificates_whatever_the_file_names(self):
+        bundle = None
+        for candidate in (
+            ssl.get_default_verify_paths().cafile,
+            "/etc/ssl/certs/ca-certificates.crt",
+        ):
+            if candidate and os.path.exists(candidate):
+                bundle = candidate
+                break
+        if bundle is None:
+            self.skipTest("no system CA bundle to take sample certificates from")
+        pems = re.findall(
+            r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----",
+            open(bundle, encoding="ascii", errors="ignore").read(),
+            re.DOTALL,
+        )
+        self.assertGreaterEqual(len(pems), 3)
+        with tempfile.TemporaryDirectory() as directory:
+            # Android style: hash-like names plus trailing text after the PEM.
+            for index, pem in enumerate(pems[:3]):
+                with open(os.path.join(directory, f"{index:08x}.0"), "w") as handle:
+                    handle.write(pem + "\nCertificate:\n    Data:\n")
+            with open(os.path.join(directory, "duplicate.0"), "w") as handle:
+                handle.write(pems[0])
+            with open(os.path.join(directory, "notes.txt"), "w") as handle:
+                handle.write("not a certificate")
+            context, count = build_ssl_context((directory,))
+        self.assertEqual(count, 3)
+        self.assertGreaterEqual(len(context.get_ca_certs()), 3)
+
+    @unittest.skipUnless(shutil.which("openssl"), "openssl command line tool needed")
+    def test_https_verifies_against_certificates_with_android_style_names(self):
+        with tempfile.TemporaryDirectory() as work:
+            def run(*args):
+                subprocess.run(["openssl", *args], cwd=work, check=True, capture_output=True)
+
+            run("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key",
+                "-out", "ca.pem", "-days", "2", "-subj", "/CN=Test Android CA",
+                "-addext", "basicConstraints=critical,CA:TRUE",
+                "-addext", "keyUsage=critical,keyCertSign,cRLSign")
+            run("req", "-newkey", "rsa:2048", "-nodes", "-keyout", "srv.key",
+                "-out", "srv.csr", "-subj", "/CN=localhost")
+            with open(os.path.join(work, "ext.cnf"), "w") as handle:
+                handle.write(
+                    "subjectAltName=DNS:localhost\nbasicConstraints=CA:FALSE\n"
+                    "keyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n"
+                )
+            run("x509", "-req", "-in", "srv.csr", "-CA", "ca.pem", "-CAkey", "ca.key",
+                "-CAcreateserial", "-out", "srv.pem", "-days", "2", "-extfile", "ext.cnf")
+            cadir = os.path.join(work, "cacerts")
+            os.mkdir(cadir)
+            # Not the name OpenSSL's capath lookup expects: the Android situation.
+            shutil.copy(os.path.join(work, "ca.pem"), os.path.join(cadir, "deadbeef.0"))
+
+            class Hello(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    body = b'{"status": "ok"}'
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+
+                def log_message(self, *args):
+                    pass
+
+            server = HTTPServer(("127.0.0.1", 0), Hello)
+            server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            server_context.load_cert_chain(
+                os.path.join(work, "srv.pem"), os.path.join(work, "srv.key")
+            )
+            server.socket = server_context.wrap_socket(server.socket, server_side=True)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            self.addCleanup(server.server_close)
+            self.addCleanup(server.shutdown)
+            url = f"https://localhost:{server.server_port}"
+
+            untrusting = TaskStackClient(url, timeout=5)
+            with self.assertRaises(NetworkError) as caught:
+                untrusting._request("GET", "/health")
+            self.assertIn("CERTIFICATE_VERIFY_FAILED", str(caught.exception))
+            self.assertIn("system CA certificates loaded", str(caught.exception))
+
+            # The new client reads the files directly and trusts the test CA.
+            trusting = TaskStackClient(url, timeout=5)
+            context, count = build_ssl_context((cadir,))
+            self.assertEqual(count, 1)
+            trusting._ssl_context = context
+            self.assertEqual(trusting.health(), {"status": "ok"})
 
     def test_health(self):
         self.assertEqual(self.client.health()["status"], "ok")

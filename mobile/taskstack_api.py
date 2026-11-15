@@ -7,6 +7,7 @@ for running it off the UI thread.
 
 import json
 import os
+import re
 import socket
 import ssl
 import urllib.error
@@ -22,16 +23,42 @@ ANDROID_CA_DIRS = (
     "/system/etc/security/cacerts",
 )
 
+_PEM_CERTIFICATE = re.compile(
+    r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", re.DOTALL
+)
+
 
 def build_ssl_context(ca_dirs=ANDROID_CA_DIRS):
+    """Return (context, number of system CA certificates loaded).
+
+    Android names the files in its certificate directories with the old
+    OpenSSL subject hash, which a ``capath`` lookup does not find, so every file
+    is read and handed to OpenSSL directly.
+    """
     context = ssl.create_default_context()
+    loaded = set()
     for directory in ca_dirs:
-        if os.path.isdir(directory):
+        try:
+            names = sorted(os.listdir(directory))
+        except OSError:
+            continue
+        for name in names:
             try:
-                context.load_verify_locations(capath=directory)
-            except (OSError, ssl.SSLError):
+                with open(
+                    os.path.join(directory, name), "r", encoding="ascii", errors="ignore"
+                ) as handle:
+                    text = handle.read()
+            except OSError:
                 continue
-    return context
+            for pem in _PEM_CERTIFICATE.findall(text):
+                if pem in loaded:
+                    continue
+                try:
+                    context.load_verify_locations(cadata=pem)
+                except ssl.SSLError:
+                    continue
+                loaded.add(pem)
+    return context, len(loaded)
 
 
 class ApiError(Exception):
@@ -84,6 +111,7 @@ class TaskStackClient:
         self.user_id = None
         self.username = None
         self._ssl_context = None
+        self._system_ca_count = 0
 
     # -- transport ---------------------------------------------------------
 
@@ -99,7 +127,7 @@ class TaskStackClient:
             self.base_url + path, data=data, headers=headers, method=method
         )
         if self._ssl_context is None:
-            self._ssl_context = build_ssl_context()
+            self._ssl_context, self._system_ca_count = build_ssl_context()
         try:
             with urllib.request.urlopen(
                 request, timeout=timeout or self.timeout, context=self._ssl_context
@@ -109,7 +137,10 @@ class TaskStackClient:
             raise ApiError(error.code, _error_detail(error)) from None
         except (urllib.error.URLError, socket.timeout, TimeoutError, OSError) as error:
             reason = getattr(error, "reason", error)
-            raise NetworkError(str(reason)) from None
+            message = str(reason)
+            if isinstance(reason, ssl.SSLCertVerificationError):
+                message += f" ({self._system_ca_count} system CA certificates loaded)"
+            raise NetworkError(message) from None
         if not raw:
             return None
         try:
