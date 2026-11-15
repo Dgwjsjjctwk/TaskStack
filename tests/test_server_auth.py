@@ -31,6 +31,120 @@ class ServerAuthenticationTests(unittest.TestCase):
                 "users",
             ):
                 conn.execute(f"DELETE FROM {table}")
+        server.login_limiter = server.LoginAttemptLimiter()
+
+    @staticmethod
+    def _restore_username_index():
+        with server.connect_db() as conn:
+            conn.execute("DELETE FROM users")
+        server._ensure_username_keys()
+
+    def register(self, username, password="correct-password"):
+        return server.register_user(
+            server.UserRegisterModel(username=username, password=password)
+        )
+
+    def test_username_is_unique_regardless_of_case_and_password(self):
+        self.register("Иван", "first-password")
+        for duplicate, password in (
+            ("Иван", "first-password"),
+            ("иван", "first-password"),
+            ("ИВАН", "first-passworD"),
+            ("  Иван  ", "another-password"),
+        ):
+            with self.subTest(duplicate=duplicate):
+                with self.assertRaises(HTTPException) as caught:
+                    self.register(duplicate, password)
+                self.assertEqual(caught.exception.status_code, 400)
+        with server.connect_db() as conn:
+            count = conn.execute("SELECT COUNT(*) AS count FROM users").fetchone()["count"]
+        self.assertEqual(count, 1)
+
+    def test_fullwidth_and_invisible_characters(self):
+        self.register("Ivan")
+        with self.assertRaises(HTTPException):
+            self.register("Ｉｖａｎ")  # full-width letters fold to "Ivan"
+        for bad in ("Iv\u200ban", "Iv\u0000an", "Iv\tan", "Iv\u2028an"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(HTTPException) as caught:
+                    self.register(bad)
+                self.assertEqual(caught.exception.status_code, 400)
+
+    def test_login_ignores_case_and_needs_exact_password(self):
+        self.register("Anna", "right-password")
+        ok = server.login_user(
+            server.UserRegisterModel(username="aNNa", password="right-password")
+        )
+        self.assertEqual(ok["username"], "Anna")
+        for wrong in ("right-passworD", "right-password ", "right-passwor"):
+            with self.subTest(wrong=wrong):
+                with self.assertRaises(HTTPException) as caught:
+                    server.login_user(
+                        server.UserRegisterModel(username="Anna", password=wrong)
+                    )
+                self.assertEqual(caught.exception.status_code, 401)
+
+    def test_existing_accounts_get_a_key_and_old_duplicates_do_not_crash(self):
+        with server.connect_db() as conn:
+            # An old database: no unique index could be built over the duplicates.
+            conn.execute("DROP INDEX IF EXISTS idx_users_username_key")
+        self.addCleanup(self._restore_username_index)
+        with server.connect_db() as conn:
+            conn.execute(
+                "INSERT INTO users (username, password) VALUES (?, ?)", ("Old", "x")
+            )
+            conn.execute(
+                "INSERT INTO users (username, password) VALUES (?, ?)", ("old", "x")
+            )
+        server._ensure_username_keys()  # must not raise
+        with server.connect_db() as conn:
+            keys = [
+                row["username_key"]
+                for row in conn.execute("SELECT username_key FROM users").fetchall()
+            ]
+        self.assertEqual(keys, ["old", "old"])
+        with self.assertRaises(HTTPException):
+            self.register("OLD")
+
+    def test_repeated_wrong_passwords_lock_the_account(self):
+        self.register("Boris", "right-password")
+        for _ in range(5):
+            with self.assertRaises(HTTPException) as caught:
+                server.login_user(
+                    server.UserRegisterModel(username="Boris", password="wrong-password")
+                )
+            self.assertEqual(caught.exception.status_code, 401)
+        with self.assertRaises(HTTPException) as caught:
+            server.login_user(
+                server.UserRegisterModel(username="boris", password="right-password")
+            )
+        self.assertEqual(caught.exception.status_code, 429)
+        self.assertIn("Retry-After", caught.exception.headers)
+        self.assertIsNone(
+            server.authenticate_mcp_user("Boris", "right-password")
+        )
+
+    def test_limiter_unlocks_after_the_lockout_and_resets_on_success(self):
+        now = [0.0]
+        limiter = server.LoginAttemptLimiter(
+            max_failures=3, window=60, lockout=30, clock=lambda: now[0]
+        )
+        for _ in range(3):
+            limiter.record_failure("a")
+        self.assertGreater(limiter.retry_after("a"), 0)
+        now[0] = 31
+        self.assertEqual(limiter.retry_after("a"), 0)
+        limiter.record_failure("b")
+        limiter.record_failure("b")
+        limiter.record_success("b")
+        limiter.record_failure("b")
+        self.assertEqual(limiter.retry_after("b"), 0)
+        # failures older than the window do not add up
+        limiter.record_failure("c")
+        now[0] = 100
+        limiter.record_failure("c")
+        limiter.record_failure("c")
+        self.assertEqual(limiter.retry_after("c"), 0)
 
     def test_password_hashing_and_legacy_upgrade(self):
         first_hash = server.hash_password("correct horse battery staple")

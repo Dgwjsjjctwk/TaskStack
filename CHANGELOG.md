@@ -1,5 +1,23 @@
 # Changelog / История изменений
 
+## Unreleased / Не выпущено
+
+### Русский
+
+- Имена пользователей теперь уникальны без учёта регистра: «Иван», «иван» и «ИВАН» — одно имя. Регистрация с занятым именем отклоняется при любом пароле. Вход тоже не зависит от регистра имени (пароль по-прежнему должен совпадать точно).
+- Имена нормализуются (NFKC), а невидимые и управляющие символы в имени запрещены, чтобы нельзя было создать двойника, неотличимого на экране.
+- После 5 неверных паролей подряд вход для этого имени блокируется на 5 минут (ответ 429 с `Retry-After`); то же действует для входа через MCP/OAuth. Счётчик хранится в памяти процесса и сбрасывается при перезапуске.
+- При первом запуске существующие аккаунты получают служебный ключ имени. Если в старой базе уже есть имена, различающиеся только регистром, уникальный индекс не создаётся (в лог пишется предупреждение), старые аккаунты продолжают работать, а новые дубликаты блокируются проверкой при регистрации.
+- Названия колонок в запросе обновления задачи строятся из фиксированного списка (укрепление защиты от SQL-инъекций; поведение не изменилось).
+
+### English
+
+- Usernames are now unique regardless of letter case: "Ivan", "ivan" and "IVAN" are the same name. Registering a taken name is refused whatever the password. Sign-in also ignores the case of the name (the password must still match exactly).
+- Names are normalized (NFKC) and invisible or control characters are refused, so a look-alike account that cannot be told apart on screen cannot be created.
+- After 5 wrong passwords in a row, sign-in for that name is locked for 5 minutes (HTTP 429 with `Retry-After`); this also covers MCP/OAuth sign-in. The counter lives in process memory and resets on restart.
+- On first start, existing accounts get an internal name key. If an old database already holds names that differ only by case, the unique index is not built (a warning is logged), the old accounts keep working, and new duplicates are blocked by the check at registration.
+- Column names in the task update query now come from a fixed list (SQL injection hardening; no behaviour change).
+
 ## 1.3.0 — 2026-11-13
 
 ### Русский
