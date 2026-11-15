@@ -50,6 +50,11 @@ class PackagingTests(unittest.TestCase):
         )
 
         self.assertIn("pyside6-android-deploy", android)
+        # pyside6-android-deploy needs Python <= 3.11, and qtpip serves only
+        # commercial wheels (it silently downloads nothing for open source).
+        self.assertIn('python-version: "3.11"', android)
+        self.assertNotIn("qtpip", android)
+        self.assertIn("download.qt.io/official_releases/QtForPython", android)
         self.assertIn("android-aarch64.apk", android)
         self.assertNotIn("android", desktop.lower())
         for name in ("main.py", "backend.py", "qml/Main.qml"):

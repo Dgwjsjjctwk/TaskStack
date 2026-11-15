@@ -42,9 +42,11 @@ jobs:
       - name: Run client tests
         run: python3 -m unittest tests.test_mobile_api tests.test_mobile_logic tests.test_mobile_strings
 
+      # pyside6-android-deploy refuses to run on Python 3.12 or newer (buildozer
+      # restriction), and the Android wheels are built for CPython 3.11.
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - uses: actions/setup-java@v4
         with:
@@ -54,17 +56,23 @@ jobs:
       - name: Install Qt for Python tools
         run: |
           python -m pip install --upgrade pip
-          python -m pip install "PySide6==${PYSIDE_VERSION}" qtpip
+          python -m pip install "PySide6==${PYSIDE_VERSION}"
           # Dependencies of pyside6-android-deploy itself (pkginfo, jinja2, ...).
           python -m pip install -r "$(python -c 'import os, PySide6; print(os.path.join(os.path.dirname(PySide6.__file__), "scripts", "requirements-android.txt"))')"
 
       - name: Download Android wheels for PySide6 and shiboken6
         run: |
+          # The open-source Android wheels are published on download.qt.io
+          # (PySide6 and shiboken6 in separate folders); the commercial wheel
+          # installer does not serve them and downloads nothing without a license.
           mkdir -p android-wheels
           cd android-wheels
-          qtpip download PySide6 --android --arch aarch64
+          base="https://download.qt.io/official_releases/QtForPython"
+          tag="${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl"
+          curl -fL --retry 3 --retry-delay 5 -O "$base/pyside6/PySide6-$tag"
+          curl -fL --retry 3 --retry-delay 5 -O "$base/shiboken6/shiboken6-$tag"
           echo "Downloaded files:"
-          find . -type f -print
+          ls -la
 
       - name: Download Android NDK and SDK
         run: |

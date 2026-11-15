@@ -52,21 +52,27 @@ The APK is signed with a debug key, which is fine for installing from a file. Pu
 
 ### Locally (Linux or macOS host only)
 
-Requirements from the Qt for Python documentation: Python 3.10+, JDK 17+, NDK r27c (downloaded by the helper script), SDK packages `platform-tools`, `platforms;android-35`, `build-tools;35.0.0`. The deployed app runs CPython 3.14.
+Requirements: a host Python of **3.11 or lower** (`pyside6-android-deploy` refuses to run on 3.12+), JDK 17, NDK r27c and the SDK packages (both downloaded by the helper script). The Android wheels are built for CPython 3.11, so the app runs on Python 3.11.
 
 ```bash
-python -m pip install PySide6==6.10.0 qtpip packaging
-mkdir android-wheels && cd android-wheels && qtpip download PySide6 --android --arch aarch64 && cd ..
+python -m pip install PySide6==6.10.0 packaging
+python -m pip install -r "$(python -c 'import os, PySide6; print(os.path.join(os.path.dirname(PySide6.__file__), "scripts", "requirements-android.txt"))')"
+mkdir android-wheels && cd android-wheels
+base=https://download.qt.io/official_releases/QtForPython
+tag=6.10.0-6.10.0-cp311-cp311-android_aarch64.whl
+curl -fLO "$base/pyside6/PySide6-$tag"
+curl -fLO "$base/shiboken6/shiboken6-$tag"
+cd ..
 git clone --branch v6.10.0 https://code.qt.io/pyside/pyside-setup
 python -m pip install -r pyside-setup/tools/cross_compile_android/requirements.txt
 python pyside-setup/tools/cross_compile_android/main.py --download-only --skip-update --auto-accept-license
 cd mobile
 pyside6-android-deploy --name TaskStack \
-  --wheel-pyside ../android-wheels/PySide6-*.whl \
-  --wheel-shiboken ../android-wheels/shiboken6-*.whl
+  --wheel-pyside ../android-wheels/PySide6-$tag \
+  --wheel-shiboken ../android-wheels/shiboken6-$tag
 ```
 
-For an emulator use `--arch x86_64` wheels instead of `aarch64`.
+For an emulator use the `android_x86_64` wheels instead of `android_aarch64`. `qtpip` is not needed: it only serves commercial Qt licenses.
 
 ## Известные ограничения / Known limitations
 
