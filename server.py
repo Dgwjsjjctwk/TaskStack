@@ -729,10 +729,17 @@ def update_task_fields(task_id: int, updates: dict, current_user: dict):
                 status_code=403,
                 detail="Only the task owner can update task details",
             )
-        assignments = ", ".join(f"{field} = ?" for field in fields)
+        # Column names come only from this fixed tuple, never from the request;
+        # the values are always bound as parameters.
+        columns = [
+            column
+            for column in ("title", "status", "priority", "category", "deadline")
+            if column in fields
+        ]
+        assignments = ", ".join(f"{column} = ?" for column in columns)
         conn.execute(
             f"UPDATE tasks SET {assignments} WHERE id = ?",
-            (*fields.values(), task_id),
+            (*(fields[column] for column in columns), task_id),
         )
 
 
