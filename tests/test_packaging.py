@@ -50,8 +50,11 @@ class PackagingTests(unittest.TestCase):
         )
 
         self.assertIn("pyside6-android-deploy", android)
-        # pyside6-android-deploy needs Python <= 3.11, and qtpip serves only
-        # commercial wheels (it silently downloads nothing for open source).
+        # Qt for Python < 6.12 wheels target CPython 3.11 while the app runs 3.14,
+        # and qtpip serves only commercial wheels (it downloads nothing otherwise).
+        self.assertIn('PYSIDE_VERSION: "6.12.0"', android)
+        self.assertIn("cp310-abi3-android_aarch64", android)
+        self.assertNotIn("cp311-cp311-android", android)
         self.assertIn('python-version: "3.11"', android)
         self.assertNotIn("qtpip", android)
         self.assertIn("download.qt.io/official_releases/QtForPython", android)

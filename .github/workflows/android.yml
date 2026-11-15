@@ -18,7 +18,12 @@ permissions:
 
 env:
   # Qt for Python version used for the Android wheels and the deploy tool.
-  PYSIDE_VERSION: "6.10.0"
+  # Keep it at 6.12.0 or newer: only from 6.12.0 are the Android wheels built
+  # for the stable ABI (cp310-abi3) and the deploy tool pins python-for-android.
+  # The 6.10.0 wheels target CPython 3.11, but the tool then pulled the moving
+  # python-for-android "develop" branch (CPython 3.14), and the app closed
+  # right after the splash screen.
+  PYSIDE_VERSION: "6.12.0"
 
 jobs:
   android:
@@ -42,8 +47,9 @@ jobs:
       - name: Run client tests
         run: python3 -m unittest tests.test_mobile_api tests.test_mobile_logic tests.test_mobile_strings
 
-      # pyside6-android-deploy refuses to run on Python 3.12 or newer (buildozer
-      # restriction), and the Android wheels are built for CPython 3.11.
+      # The host Python only runs the tools; any version from 3.10 to 3.14 works
+      # with Qt for Python 6.12.0. The app itself runs on the CPython that
+      # python-for-android builds (3.14).
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -68,8 +74,10 @@ jobs:
           mkdir -p android-wheels
           cd android-wheels
           base="https://download.qt.io/official_releases/QtForPython"
-          tag="${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp311-cp311-android_aarch64.whl"
-          curl -fL --retry 3 --retry-delay 5 -O "$base/pyside6/PySide6-$tag"
+          tag="${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp310-abi3-android_aarch64.whl"
+          # Releases from 6.11 publish the wheel with a lower-case prefix.
+          curl -fL --retry 3 --retry-delay 5 -O "$base/pyside6/pyside6-$tag" \
+            || curl -fL --retry 3 --retry-delay 5 -O "$base/pyside6/PySide6-$tag"
           curl -fL --retry 3 --retry-delay 5 -O "$base/shiboken6/shiboken6-$tag"
           echo "Downloaded files:"
           ls -la
@@ -97,6 +105,11 @@ jobs:
             find ../android-wheels -print >&2
             exit 1
           fi
+          case "$pyside_wheel$shiboken_wheel" in
+            *cp311-cp311*)
+              echo "These wheels target CPython 3.11 but the app runs CPython 3.14; use abi3 wheels." >&2
+              exit 1 ;;
+          esac
           echo "PySide6 wheel:   $pyside_wheel"
           echo "shiboken6 wheel: $shiboken_wheel"
           pyside6-android-deploy \

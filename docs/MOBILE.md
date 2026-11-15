@@ -50,7 +50,7 @@ python -m unittest tests.test_mobile_api tests.test_mobile_logic tests.test_mobi
 
 **Where to get the APK.** For a pull request or a manual run, open the run in the **Actions** tab and download the artifact `taskstack-android-aarch64` at the bottom of the page (a zip with the APK inside). For a `v*` tag the APK is also attached to the GitHub release.
 
-**Verified build.** The workflow has completed successfully on GitHub Actions (about 6 minutes). The APK targets ARM64 phones (`arm64-v8a`), needs Android 5.0 or newer (API 21), declares the `INTERNET` permission, and bundles the Qt Quick Controls with the Material style that the interface uses. It has not yet been run on a device by the author of this change.
+**Build status.** The workflow completes on GitHub Actions in about 6 minutes (a first build with Qt for Python 6.10.0 succeeded, but its APK closed right after launch; see the known limitations). The APK targets ARM64 phones (`arm64-v8a`), needs Android 5.0 or newer (API 21), declares the `INTERNET` permission, and bundles the Qt Quick Controls with the Material style that the interface uses. It has not yet been run on a device by the author of this change.
 
 **Cosmetic limits of the generated APK.** The internal version name is `0.1` and the icon is the default Qt for Python one, because `pyside6-android-deploy` does not take them from `VERSION`. The package name is `org.taskstack.taskstack`.
 
@@ -58,23 +58,23 @@ The APK is signed with a debug key, which is fine for installing from a file. Pu
 
 ### Locally (Linux or macOS host only)
 
-Requirements: a host Python of **3.11 or lower** (`pyside6-android-deploy` refuses to run on 3.12+), JDK 17, NDK r27c and the SDK packages (both downloaded by the helper script). The Android wheels use Python's stable ABI (`abi3`), so the app itself runs on the CPython that python-for-android builds (3.14.2 in the verified build), not on the host's Python.
+Requirements: a host Python 3.10 to 3.14 (it only runs the tools), JDK 17 or newer, NDK r28c and the SDK packages (both downloaded by the helper script). The Android wheels of Qt for Python 6.12.0 use Python's stable ABI (`cp310-abi3`), so they run on the CPython 3.14 that python-for-android builds into the app. Do not use the 6.10 or 6.11 wheels: they target CPython 3.11 and the app closes right after the splash screen.
 
 ```bash
-python -m pip install PySide6==6.10.0 packaging
+python -m pip install PySide6==6.12.0 packaging
 python -m pip install -r "$(python -c 'import os, PySide6; print(os.path.join(os.path.dirname(PySide6.__file__), "scripts", "requirements-android.txt"))')"
 mkdir android-wheels && cd android-wheels
 base=https://download.qt.io/official_releases/QtForPython
-tag=6.10.0-6.10.0-cp311-cp311-android_aarch64.whl
-curl -fLO "$base/pyside6/PySide6-$tag"
+tag=6.12.0-6.12.0-cp310-abi3-android_aarch64.whl
+curl -fLO "$base/pyside6/pyside6-$tag"
 curl -fLO "$base/shiboken6/shiboken6-$tag"
 cd ..
-git clone --branch v6.10.0 https://code.qt.io/pyside/pyside-setup
+git clone --branch v6.12.0 https://code.qt.io/pyside/pyside-setup
 python -m pip install -r pyside-setup/tools/cross_compile_android/requirements.txt
 python pyside-setup/tools/cross_compile_android/main.py --download-only --skip-update --auto-accept-license
 cd mobile
 pyside6-android-deploy --name TaskStack \
-  --wheel-pyside ../android-wheels/PySide6-$tag \
+  --wheel-pyside ../android-wheels/pyside6-$tag \
   --wheel-shiboken ../android-wheels/shiboken6-$tag
 ```
 
@@ -86,7 +86,7 @@ For an emulator use the `android_x86_64` wheels instead of `android_aarch64`. `q
 - Android blocks plain `http://` by default, so a self-hosted server must use HTTPS. (An emulator reaches the host computer at `10.0.2.2`, but only over HTTPS unless cleartext traffic is allowed in the app.)
 - The sign-in token is kept in the app's private settings; the password is never stored.
 - Not in the mobile app: AI tasks, tray, window pinning.
-- The Android build chain (`pyside6-android-deploy`) is young and its version pins matter: Python 3.11 on the host, Qt for Python 6.10.0 wheels, NDK r27c. Upgrade them together.
+- The Android build chain (`pyside6-android-deploy`) is young and its version pins matter: keep Qt for Python at 6.12.0 or newer, because its tool pins python-for-android and its Android wheels are `abi3`. Qt for Python 6.10.0 produced an APK that closed right after start.
 
 ## If the app closes right after it starts
 
