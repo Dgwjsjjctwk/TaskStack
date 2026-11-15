@@ -48,11 +48,17 @@ python -m unittest tests.test_mobile_api tests.test_mobile_logic tests.test_mobi
 
 `android.yml` runs on a `v*` tag, on a pull request touching `mobile/`, or by hand (**Actions → Build Android APK → Run workflow**). It produces `TaskStack-<version>-android-aarch64.apk` as a build artifact and, for a tag, attaches it to the release. It is a separate workflow so that a problem in the Android toolchain never blocks the desktop installers.
 
+**Where to get the APK.** For a pull request or a manual run, open the run in the **Actions** tab and download the artifact `taskstack-android-aarch64` at the bottom of the page (a zip with the APK inside). For a `v*` tag the APK is also attached to the GitHub release.
+
+**Verified build.** The workflow has completed successfully on GitHub Actions (about 6 minutes). The APK targets ARM64 phones (`arm64-v8a`), needs Android 5.0 or newer (API 21), declares the `INTERNET` permission, and bundles the Qt Quick Controls with the Material style that the interface uses. It has not yet been run on a device by the author of this change.
+
+**Cosmetic limits of the generated APK.** The internal version name is `0.1` and the icon is the default Qt for Python one, because `pyside6-android-deploy` does not take them from `VERSION`. The package name is `org.taskstack.taskstack`.
+
 The APK is signed with a debug key, which is fine for installing from a file. Publishing to Google Play needs a release build (an AAB) and your own signing key; that is not set up.
 
 ### Locally (Linux or macOS host only)
 
-Requirements: a host Python of **3.11 or lower** (`pyside6-android-deploy` refuses to run on 3.12+), JDK 17, NDK r27c and the SDK packages (both downloaded by the helper script). The Android wheels are built for CPython 3.11, so the app runs on Python 3.11.
+Requirements: a host Python of **3.11 or lower** (`pyside6-android-deploy` refuses to run on 3.12+), JDK 17, NDK r27c and the SDK packages (both downloaded by the helper script). The Android wheels use Python's stable ABI (`abi3`), so the app itself runs on the CPython that python-for-android builds (3.14.2 in the verified build), not on the host's Python.
 
 ```bash
 python -m pip install PySide6==6.10.0 packaging
@@ -80,7 +86,7 @@ For an emulator use the `android_x86_64` wheels instead of `android_aarch64`. `q
 - Android blocks plain `http://` by default, so a self-hosted server must use HTTPS. (An emulator reaches the host computer at `10.0.2.2`, but only over HTTPS unless cleartext traffic is allowed in the app.)
 - The sign-in token is kept in the app's private settings; the password is never stored.
 - Not in the mobile app: AI tasks, tray, window pinning.
-- The Android build chain (`pyside6-android-deploy`) is documented by Qt as young. The workflow in this repository was written from that documentation and has to be run once on GitHub before it can be trusted; see the first-run checklist below.
+- The Android build chain (`pyside6-android-deploy`) is young and its version pins matter: Python 3.11 on the host, Qt for Python 6.10.0 wheels, NDK r27c. Upgrade them together.
 
 ## First-run checklist (APK)
 
