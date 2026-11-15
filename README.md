@@ -249,3 +249,7 @@ The APK is built by the separate `.github/workflows/android.yml` workflow; a fai
 ## Лицензия / License
 
 Лицензия в этом выпуске не предоставляется; права на исходный код сохраняются за его правообладателем. / No license is granted with this release; all rights to the source code remain with its owner.
+
+## О создании / About
+
+Проект сделан совместно с Claude (Anthropic): идеи, решения и проверка на устройствах — автора проекта, а значительная часть кода, тестов и документации написана вместе с Claude. / Made together with Claude (Anthropic): the ideas, decisions and on-device testing are the author's, and a large part of the code, tests and documentation was written together with Claude.
