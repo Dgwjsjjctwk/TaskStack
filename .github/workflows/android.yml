@@ -55,13 +55,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "PySide6==${PYSIDE_VERSION}" qtpip
+          # Dependencies of pyside6-android-deploy itself (pkginfo, jinja2, ...).
+          python -m pip install -r "$(python -c 'import os, PySide6; print(os.path.join(os.path.dirname(PySide6.__file__), "scripts", "requirements-android.txt"))')"
 
       - name: Download Android wheels for PySide6 and shiboken6
         run: |
           mkdir -p android-wheels
           cd android-wheels
           qtpip download PySide6 --android --arch aarch64
-          ls -la
+          echo "Downloaded files:"
+          find . -type f -print
 
       - name: Download Android NDK and SDK
         run: |
@@ -78,10 +81,20 @@ jobs:
       - name: Build APK
         working-directory: mobile
         run: |
+          set -euo pipefail
+          pyside_wheel="$(find ../android-wheels -type f -iname 'pyside6-*.whl' | head -n 1)"
+          shiboken_wheel="$(find ../android-wheels -type f -iname 'shiboken6-*.whl' | head -n 1)"
+          if [ -z "$pyside_wheel" ] || [ -z "$shiboken_wheel" ]; then
+            echo "Android wheels not found. Everything under android-wheels:" >&2
+            find ../android-wheels -print >&2
+            exit 1
+          fi
+          echo "PySide6 wheel:   $pyside_wheel"
+          echo "shiboken6 wheel: $shiboken_wheel"
           pyside6-android-deploy \
             --name TaskStack \
-            --wheel-pyside "$(ls ../android-wheels/PySide6-*.whl | head -n 1)" \
-            --wheel-shiboken "$(ls ../android-wheels/shiboken6-*.whl | head -n 1)" \
+            --wheel-pyside "$pyside_wheel" \
+            --wheel-shiboken "$shiboken_wheel" \
             --force
           find . -name "*.apk" -print
 
