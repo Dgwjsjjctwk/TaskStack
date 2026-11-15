@@ -1,10 +1,10 @@
 # TaskStack
 
-Настольный менеджер задач на Python и PyQt6: задачи по категориям, приоритетам и срокам, поиск, совместное использование задач и групп, закрепление окна и системный трей (если он доступен в рабочем окружении).
+Менеджер задач на Python: настольное приложение на PyQt6 (Windows, Linux, macOS) и мобильное приложение для Android на PySide6 и Qt Quick. Задачи по категориям, приоритетам и срокам, поиск, совместное использование задач и групп; в настольной версии также закрепление окна и системный трей (если он доступен в рабочем окружении).
 
-Desktop task manager built with Python and PyQt6: organize tasks by category, priority, and deadline; search; share tasks and groups; pin the window; and use the system tray when the desktop provides one.
+Task manager built with Python: a desktop app on PyQt6 (Windows, Linux, macOS) and an Android app on PySide6 and Qt Quick. Organize tasks by category, priority, and deadline; search; share tasks and groups; the desktop app also pins the window and uses the system tray when the desktop provides one.
 
-**Версия / Version: 1.3.0**
+**Версия / Version: 1.4.0**
 
 ## Установка
 
@@ -14,10 +14,11 @@ Desktop task manager built with Python and PyQt6: organize tasks by category, pr
 
 | Платформа | Файл | Установка и запуск |
 | --- | --- | --- |
-| Windows 10/11, x64 | `TaskStack-Setup-1.3.0-win-x64.exe` | Запустите Setup, затем откройте TaskStack из меню «Пуск» или с рабочего стола. |
-| Linux, x64 | `TaskStack-1.3.0-linux-x86_64.AppImage` | Выполните `chmod +x TaskStack-*.AppImage`, затем `./TaskStack-*.AppImage`. |
-| macOS, Intel | `TaskStack-1.3.0-macos-x86_64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
-| macOS, Apple Silicon | `TaskStack-1.3.0-macos-arm64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
+| Windows 10/11, x64 | `TaskStack-Setup-1.4.0-win-x64.exe` | Запустите Setup, затем откройте TaskStack из меню «Пуск» или с рабочего стола. |
+| Linux, x64 | `TaskStack-1.4.0-linux-x86_64.AppImage` | Выполните `chmod +x TaskStack-*.AppImage`, затем `./TaskStack-*.AppImage`. |
+| macOS, Intel | `TaskStack-1.4.0-macos-x86_64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
+| macOS, Apple Silicon | `TaskStack-1.4.0-macos-arm64.dmg` | Откройте DMG и перетащите TaskStack в Applications. |
+| Android, ARM64 | `TaskStack-1.4.0-android-aarch64.apk` | Скачайте APK на телефон, разрешите установку из этого источника и откройте файл. |
 
 Приложения в DMG для macOS не подписаны и не нотарифицированы. При первом запуске macOS Gatekeeper может показать предупреждение. Для подписанной и нотарифицированной публикации нужны учётные данные Apple Developer, которые не настроены для этого проекта.
 
@@ -98,7 +99,30 @@ python -m PyInstaller --noconfirm --clean --distpath release-build\dist --workpa
 python -m PyInstaller --noconfirm --clean --distpath release-build/dist --workpath release-build/work TaskManager.spec
 ```
 
-Для локальной сборки Windows Setup установите Inno Setup и выполните `ISCC.exe /DAppVersion=1.3.0 packaging\windows\TaskStack.iss` после сборки executable. GitHub Actions упаковывает Windows executable с помощью Inno Setup и собирает Linux/macOS на соответствующих runner-ах. Linux AppImage предназначен для x64; DMG собираются отдельно для Intel и Apple Silicon.
+Для локальной сборки Windows Setup установите Inno Setup и выполните `ISCC.exe /DAppVersion=1.4.0 packaging\windows\TaskStack.iss` после сборки executable. GitHub Actions упаковывает Windows executable с помощью Inno Setup и собирает Linux/macOS на соответствующих runner-ах. Linux AppImage предназначен для x64; DMG собираются отдельно для Intel и Apple Silicon.
+
+## Мобильное приложение (Android)
+
+Версия 1.4.0 добавляет мобильный клиент для Android (папка `mobile/`). Он работает с тем же сервером и теми же учётными записями, что и настольное приложение, поэтому задачи синхронизируются между телефоном и компьютером.
+
+**Что есть в мобильном приложении:**
+
+- вход и регистрация; сессия сохраняется, пароль не хранится;
+- список задач с поиском, фильтрами (все, активные, завершённые) и категориями, счётчик выполненных и просроченных;
+- добавление задачи со сроком (быстрый выбор или ввод `гггг-мм-дд чч:мм`), приоритетом и категорией;
+- отметка выполнения, удаление (только владельцем), обновление по кнопке, свайпом вниз и при возвращении в приложение;
+- совместный доступ пользователям и группам, создание групп;
+- русский и английский язык, адрес сервера в настройках, индикатор доступности сервера.
+
+**Чего нет по сравнению с настольной версией:** ИИ-задач, системного трея и закрепления окна. Офлайн-режима нет: приложению нужна связь с сервером. Для собственного сервера используйте HTTPS, потому что Android по умолчанию блокирует обычный HTTP.
+
+**Как попробовать:**
+
+- установить APK `TaskStack-1.4.0-android-aarch64.apk` из [Releases](https://github.com/Dgwjsjjctwk/TaskStack/releases) (в телефоне разрешите установку из этого источника);
+- или запустить на компьютере: `python -m pip install PySide6` и `python mobile/main.py`;
+- проверка клиента без Qt и сети: `python -m unittest tests.test_mobile_api tests.test_mobile_logic tests.test_mobile_strings`.
+
+APK собирает отдельный workflow `.github/workflows/android.yml`; его сбой не мешает публикации установщиков для компьютеров. Подробности устройства приложения и сборки: [docs/MOBILE.md](docs/MOBILE.md) и [mobile/README.md](mobile/README.md).
 
 ## Installation
 
@@ -108,10 +132,11 @@ Download the installer for your platform from [GitHub Releases](https://github.c
 
 | Platform | File | Install and launch |
 | --- | --- | --- |
-| Windows 10/11, x64 | `TaskStack-Setup-1.3.0-win-x64.exe` | Run Setup, then launch TaskStack from the Start menu or desktop shortcut. |
-| Linux, x64 | `TaskStack-1.3.0-linux-x86_64.AppImage` | Run `chmod +x TaskStack-*.AppImage`, then `./TaskStack-*.AppImage`. |
-| macOS, Intel | `TaskStack-1.3.0-macos-x86_64.dmg` | Open the DMG and drag TaskStack to Applications. |
-| macOS, Apple Silicon | `TaskStack-1.3.0-macos-arm64.dmg` | Open the DMG and drag TaskStack to Applications. |
+| Windows 10/11, x64 | `TaskStack-Setup-1.4.0-win-x64.exe` | Run Setup, then launch TaskStack from the Start menu or desktop shortcut. |
+| Linux, x64 | `TaskStack-1.4.0-linux-x86_64.AppImage` | Run `chmod +x TaskStack-*.AppImage`, then `./TaskStack-*.AppImage`. |
+| macOS, Intel | `TaskStack-1.4.0-macos-x86_64.dmg` | Open the DMG and drag TaskStack to Applications. |
+| macOS, Apple Silicon | `TaskStack-1.4.0-macos-arm64.dmg` | Open the DMG and drag TaskStack to Applications. |
+| Android, ARM64 | `TaskStack-1.4.0-android-aarch64.apk` | Download the APK to your phone, allow installing from this source, and open the file. |
 
 The apps in the macOS DMGs are not code-signed or notarized. macOS Gatekeeper may show a warning on first launch. Signed and notarized distribution requires Apple Developer credentials, which are not configured for this project.
 
@@ -192,12 +217,39 @@ python -m PyInstaller --noconfirm --clean --distpath release-build\dist --workpa
 python -m PyInstaller --noconfirm --clean --distpath release-build/dist --workpath release-build/work TaskManager.spec
 ```
 
-To build Windows Setup locally, install Inno Setup and run `ISCC.exe /DAppVersion=1.3.0 packaging\windows\TaskStack.iss` after building the executable. GitHub Actions wraps the Windows executable with Inno Setup and builds Linux/macOS on their respective runners. The Linux AppImage is x64; DMGs are built separately for Intel and Apple Silicon.
+To build Windows Setup locally, install Inno Setup and run `ISCC.exe /DAppVersion=1.4.0 packaging\windows\TaskStack.iss` after building the executable. GitHub Actions wraps the Windows executable with Inno Setup and builds Linux/macOS on their respective runners. The Linux AppImage is x64; DMGs are built separately for Intel and Apple Silicon.
+
+## Mobile app (Android)
+
+Version 1.4.0 adds an Android client (the `mobile/` folder). It uses the same server and the same accounts as the desktop app, so tasks stay in sync between a phone and a computer.
+
+**What the mobile app has:**
+
+- sign-in and registration; the session is remembered and the password is never stored;
+- a task list with search, filters (all, active, completed) and categories, plus counters for completed and overdue tasks;
+- adding a task with a deadline (quick picks or typing `yyyy-mm-dd hh:mm`), priority and category;
+- marking tasks complete, deleting them (owner only), refreshing with a button, a pull-down gesture, and when the app returns to the foreground;
+- sharing with users and groups, and creating groups;
+- Russian and English, a server address in Settings, and a server status indicator.
+
+**What it does not have compared with the desktop app:** AI tasks, the system tray, and window pinning. There is no offline mode: the app needs a connection to the server. Use HTTPS for a self-hosted server, because Android blocks plain HTTP by default.
+
+**How to try it:**
+
+- install the APK `TaskStack-1.4.0-android-aarch64.apk` from [Releases](https://github.com/Dgwjsjjctwk/TaskStack/releases) (allow installing from this source on your phone);
+- or run it on a computer: `python -m pip install PySide6`, then `python mobile/main.py`;
+- test the client without Qt or a network: `python -m unittest tests.test_mobile_api tests.test_mobile_logic tests.test_mobile_strings`.
+
+The APK is built by the separate `.github/workflows/android.yml` workflow; a failure there does not block the desktop installers. See [docs/MOBILE.md](docs/MOBILE.md) and [mobile/README.md](mobile/README.md) for how the app is organized and built.
 
 ## Релизы / Releases
 
-Загрузки установщиков и заметки к выпуску / Installer downloads and release notes: [GitHub Releases](https://github.com/Dgwjsjjctwk/TaskStack/releases). Подробности версии 1.3.0 / See the [1.3.0 changelog](CHANGELOG.md).
+Загрузки установщиков и заметки к выпуску / Installer downloads and release notes: [GitHub Releases](https://github.com/Dgwjsjjctwk/TaskStack/releases). Подробности версии 1.4.0 / See the [1.4.0 changelog](CHANGELOG.md).
 
 ## Лицензия / License
 
 Лицензия в этом выпуске не предоставляется; права на исходный код сохраняются за его правообладателем. / No license is granted with this release; all rights to the source code remain with its owner.
+
+## О создании / About
+
+Проект сделан совместно с Claude (Anthropic): идеи, решения и проверка на устройствах — автора проекта, а значительная часть кода, тестов и документации написана вместе с Claude. / Made together with Claude (Anthropic): the ideas, decisions and on-device testing are the author's, and a large part of the code, tests and documentation was written together with Claude.
