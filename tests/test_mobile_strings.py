@@ -32,7 +32,7 @@ class MobileResourcesTests(unittest.TestCase):
         self.assertEqual(translate("en", "no_such_key"), "no_such_key")
 
     def test_every_key_used_in_qml_exists(self):
-        used = set(re.findall(r'\bT\("(\w+)"\)', QML))
+        used = set(re.findall(r'\btxt\("(\w+)"\)', QML))
         used |= set(re.findall(r'label: "(\w+)"', QML))
         used |= set(re.findall(r'backend\.tr\("(\w+)"\)', QML))
         missing = sorted(key for key in used if key not in STRINGS["ru"])
@@ -50,6 +50,14 @@ class MobileResourcesTests(unittest.TestCase):
         known = defined | signals
         missing = sorted(name for name in used if name not in known)
         self.assertEqual(missing, [])
+
+    def test_qml_method_names_start_with_lowercase(self):
+        # QML refuses to load a file declaring a method whose name begins with
+        # an upper case letter ("Method names cannot begin with an upper case
+        # letter"), which made the first Android build exit right after start.
+        names = re.findall(r"\bfunction\s+(\w+)\s*\(", QML)
+        self.assertTrue(names)
+        self.assertEqual([n for n in names if n[0].isupper()], [])
 
     def test_qml_braces_are_balanced(self):
         stripped = re.sub(r'"(?:\\.|[^"\\])*"', '""', QML)

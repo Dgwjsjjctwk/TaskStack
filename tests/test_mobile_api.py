@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "mobile"))
 
 from taskstack_api import (  # noqa: E402
     DEFAULT_SERVER_URL,
+    build_ssl_context,
     ApiError,
     NetworkError,
     TaskStackClient,
@@ -128,6 +129,11 @@ class TaskStackClientTests(unittest.TestCase):
         self.assertEqual(normalize_server_url("  "), DEFAULT_SERVER_URL)
         self.assertEqual(normalize_server_url("tasks.example.com/"), "https://tasks.example.com")
         self.assertEqual(normalize_server_url("http://10.0.2.2:8000/"), "http://10.0.2.2:8000")
+
+    def test_ssl_context_survives_missing_android_certificate_dirs(self):
+        context = build_ssl_context(("/no/such/dir", "/also/missing"))
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(context.verify_mode, __import__("ssl").CERT_REQUIRED)
 
     def test_health(self):
         self.assertEqual(self.client.health()["status"], "ok")

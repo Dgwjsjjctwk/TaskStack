@@ -88,6 +88,10 @@ For an emulator use the `android_x86_64` wheels instead of `android_aarch64`. `q
 - Not in the mobile app: AI tasks, tray, window pinning.
 - The Android build chain (`pyside6-android-deploy`) is young and its version pins matter: Python 3.11 on the host, Qt for Python 6.10.0 wheels, NDK r27c. Upgrade them together.
 
+## If the app closes right after it starts
+
+If the interface cannot be loaded, the app now stays open and prints the reason on a dark screen (QML error text) instead of closing silently. Send that text (a screenshot is enough) when reporting the problem. The first Android build closed immediately because `Main.qml` declared a function whose name began with an upper case letter, which QML forbids; a test now guards against it.
+
 ## First-run checklist (APK)
 
 1. Run **Build Android APK** manually and read the log; fix the first failing step.

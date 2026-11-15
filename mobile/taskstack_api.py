@@ -6,11 +6,32 @@ for running it off the UI thread.
 """
 
 import json
+import os
 import socket
+import ssl
 import urllib.error
 import urllib.request
 
 DEFAULT_SERVER_URL = "https://taskstack-o9vw.onrender.com"
+
+
+# CPython built for Android has no default CA bundle, so HTTPS fails with
+# CERTIFICATE_VERIFY_FAILED unless the system certificate store is loaded.
+ANDROID_CA_DIRS = (
+    "/apex/com.android.conscrypt/cacerts",  # Android 14 and newer
+    "/system/etc/security/cacerts",
+)
+
+
+def build_ssl_context(ca_dirs=ANDROID_CA_DIRS):
+    context = ssl.create_default_context()
+    for directory in ca_dirs:
+        if os.path.isdir(directory):
+            try:
+                context.load_verify_locations(capath=directory)
+            except (OSError, ssl.SSLError):
+                continue
+    return context
 
 
 class ApiError(Exception):
@@ -62,6 +83,7 @@ class TaskStackClient:
         self.timeout = timeout
         self.user_id = None
         self.username = None
+        self._ssl_context = None
 
     # -- transport ---------------------------------------------------------
 
@@ -76,9 +98,11 @@ class TaskStackClient:
         request = urllib.request.Request(
             self.base_url + path, data=data, headers=headers, method=method
         )
+        if self._ssl_context is None:
+            self._ssl_context = build_ssl_context()
         try:
             with urllib.request.urlopen(
-                request, timeout=timeout or self.timeout
+                request, timeout=timeout or self.timeout, context=self._ssl_context
             ) as response:
                 raw = response.read()
         except urllib.error.HTTPError as error:

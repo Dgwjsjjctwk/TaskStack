@@ -26,9 +26,9 @@ ApplicationWindow {
     property var selectedGroups: []
     property string statusFilter: "all"
 
-    // Reading backend.language makes every binding that calls T() re-evaluate
+    // Reading backend.language makes every binding that calls txt() re-evaluate
     // when the language changes.
-    function T(key) {
+    function txt(key) {
         var lang = backend.language
         return backend.tr(key)
     }
@@ -111,7 +111,7 @@ ApplicationWindow {
                         Layout.alignment: Qt.AlignHCenter
                     }
                     Label {
-                        text: loginPage.registerMode ? T("register_title") : T("login_title")
+                        text: loginPage.registerMode ? txt("register_title") : txt("login_title")
                         color: window.mutedColor
                         Layout.alignment: Qt.AlignHCenter
                     }
@@ -119,14 +119,14 @@ ApplicationWindow {
                     TextField {
                         id: userField
                         Layout.fillWidth: true
-                        placeholderText: T("username")
+                        placeholderText: txt("username")
                         inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                         onAccepted: passField.forceActiveFocus()
                     }
                     TextField {
                         id: passField
                         Layout.fillWidth: true
-                        placeholderText: T("password")
+                        placeholderText: txt("password")
                         echoMode: TextInput.Password
                         onAccepted: submit.clicked()
                     }
@@ -135,7 +135,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         highlighted: true
                         enabled: !backend.busy
-                        text: loginPage.registerMode ? T("sign_up") : T("sign_in")
+                        text: loginPage.registerMode ? txt("sign_up") : txt("sign_in")
                         onClicked: {
                             if (loginPage.registerMode)
                                 backend.register(userField.text, passField.text)
@@ -146,13 +146,13 @@ ApplicationWindow {
                     Button {
                         Layout.fillWidth: true
                         flat: true
-                        text: loginPage.registerMode ? T("have_account") : T("no_account")
+                        text: loginPage.registerMode ? txt("have_account") : txt("no_account")
                         onClicked: loginPage.registerMode = !loginPage.registerMode
                     }
                     Button {
                         Layout.fillWidth: true
                         flat: true
-                        text: "⚙  " + T("settings")
+                        text: "⚙  " + txt("settings")
                         onClicked: settingsPopup.open()
                     }
                     BusyIndicator {
@@ -200,7 +200,7 @@ ApplicationWindow {
                             font.pixelSize: 22
                             onClicked: backend.refresh()
                             ToolTip.visible: hovered
-                            ToolTip.text: T("refresh")
+                            ToolTip.text: txt("refresh")
                         }
                         ToolButton {
                             text: "⚙"
@@ -231,9 +231,9 @@ ApplicationWindow {
                         var s = backend.stats
                         if (s.total === undefined)
                             return ""
-                        var line = fill(T("stats"), { done: s.done, total: s.total })
+                        var line = fill(txt("stats"), { done: s.done, total: s.total })
                         if (s.overdue > 0)
-                            line += "  ·  " + fill(T("overdue"), { n: s.overdue })
+                            line += "  ·  " + fill(txt("overdue"), { n: s.overdue })
                         return line
                     }
                 }
@@ -244,7 +244,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.leftMargin: 12
                     Layout.rightMargin: 12
-                    placeholderText: "🔍 " + T("search")
+                    placeholderText: "🔍 " + txt("search")
                     inputMethodHints: Qt.ImhNoPredictiveText
                     onTextChanged: window.applyFilter()
                 }
@@ -265,7 +265,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             flat: window.statusFilter !== modelData.key
                             highlighted: window.statusFilter === modelData.key
-                            text: T(modelData.label)
+                            text: txt(modelData.label)
                             font.pixelSize: 12
                             onClicked: {
                                 window.statusFilter = modelData.key
@@ -279,7 +279,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.leftMargin: 12
                     Layout.rightMargin: 12
-                    model: [T("all_categories")].concat(backend.categoryChoices)
+                    model: [txt("all_categories")].concat(backend.categoryChoices)
                     onActivated: window.applyFilter()
                 }
 
@@ -293,7 +293,7 @@ ApplicationWindow {
                     anchors.centerIn: parent
                     visible: taskList.count === 0 && !backend.busy
                     color: window.mutedColor
-                    text: backend.stats.total > 0 ? T("empty_filtered") : T("empty_list")
+                    text: backend.stats.total > 0 ? txt("empty_filtered") : txt("empty_list")
                 }
                 Timer {
                     id: pullTimer
@@ -386,9 +386,9 @@ ApplicationWindow {
                                     text: {
                                         var parts = []
                                         if (card.modelData.author !== "")
-                                            parts.push("👤 " + fill(T("from_author"), { name: card.modelData.author }))
+                                            parts.push("👤 " + fill(txt("from_author"), { name: card.modelData.author }))
                                         if (card.modelData.shared)
-                                            parts.push("👥 " + T("shared_badge"))
+                                            parts.push("👥 " + txt("shared_badge"))
                                         return parts.join("  ·  ")
                                     }
                                 }
@@ -452,29 +452,29 @@ ApplicationWindow {
             spacing: 10
 
             Label {
-                text: T("new_task")
+                text: txt("new_task")
                 font.pixelSize: 20
                 font.bold: true
             }
             TextField {
                 id: titleField
                 Layout.fillWidth: true
-                placeholderText: T("task_title_hint")
+                placeholderText: txt("task_title_hint")
                 inputMethodHints: Qt.ImhNoPredictiveText
             }
-            Label { text: T("category"); color: window.mutedColor; font.pixelSize: 12 }
+            Label { text: txt("category"); color: window.mutedColor; font.pixelSize: 12 }
             ComboBox {
                 id: categoryBox
                 Layout.fillWidth: true
                 model: backend.categoryChoices
             }
-            Label { text: T("priority"); color: window.mutedColor; font.pixelSize: 12 }
+            Label { text: txt("priority"); color: window.mutedColor; font.pixelSize: 12 }
             ComboBox {
                 id: priorityBox
                 Layout.fillWidth: true
                 model: backend.priorityChoices
             }
-            Label { text: T("deadline"); color: window.mutedColor; font.pixelSize: 12 }
+            Label { text: txt("deadline"); color: window.mutedColor; font.pixelSize: 12 }
             Flow {
                 Layout.fillWidth: true
                 spacing: 6
@@ -488,7 +488,7 @@ ApplicationWindow {
                     delegate: Button {
                         required property var modelData
                         flat: true
-                        text: T(modelData.label)
+                        text: txt(modelData.label)
                         font.pixelSize: 12
                         onClicked: deadlineField.text = backend.quickDeadline(modelData.key)
                     }
@@ -497,14 +497,14 @@ ApplicationWindow {
             TextField {
                 id: deadlineField
                 Layout.fillWidth: true
-                placeholderText: T("deadline_hint")
+                placeholderText: txt("deadline_hint")
                 inputMethodHints: Qt.ImhDigitsOnly | Qt.ImhNoPredictiveText
             }
             Button {
                 Layout.fillWidth: true
                 text: (window.selectedUsers.length + window.selectedGroups.length) > 0
-                      ? "👥 " + fill(T("share_selected"), { n: window.selectedUsers.length + window.selectedGroups.length })
-                      : "👥 " + T("share")
+                      ? "👥 " + fill(txt("share_selected"), { n: window.selectedUsers.length + window.selectedGroups.length })
+                      : "👥 " + txt("share")
                 highlighted: (window.selectedUsers.length + window.selectedGroups.length) > 0
                 onClicked: {
                     backend.loadSharing()
@@ -516,13 +516,13 @@ ApplicationWindow {
                 spacing: 8
                 Button {
                     Layout.fillWidth: true
-                    text: T("cancel")
+                    text: txt("cancel")
                     flat: true
                     onClicked: addPopup.close()
                 }
                 Button {
                     Layout.fillWidth: true
-                    text: T("add")
+                    text: txt("add")
                     highlighted: true
                     enabled: !backend.busy
                     onClicked: backend.addTask(
@@ -553,7 +553,7 @@ ApplicationWindow {
             spacing: 8
 
             Label {
-                text: T("share_title")
+                text: txt("share_title")
                 font.pixelSize: 20
                 font.bold: true
             }
@@ -570,13 +570,13 @@ ApplicationWindow {
                     spacing: 0
 
                     Label {
-                        text: T("share_users")
+                        text: txt("share_users")
                         color: window.mutedColor
                         font.pixelSize: 12
                     }
                     Label {
                         visible: backend.users.length === 0
-                        text: T("share_empty")
+                        text: txt("share_empty")
                         color: window.mutedColor
                         topPadding: 8
                         bottomPadding: 8
@@ -593,7 +593,7 @@ ApplicationWindow {
                     }
                     Label {
                         visible: backend.groups.length > 0
-                        text: T("share_groups")
+                        text: txt("share_groups")
                         color: window.mutedColor
                         font.pixelSize: 12
                         topPadding: 10
@@ -612,12 +612,12 @@ ApplicationWindow {
                         id: groupNameField
                         Layout.fillWidth: true
                         Layout.topMargin: 12
-                        placeholderText: T("group_name")
+                        placeholderText: txt("group_name")
                     }
                     Button {
                         Layout.fillWidth: true
                         flat: true
-                        text: T("create_group")
+                        text: txt("create_group")
                         enabled: !backend.busy
                         onClicked: backend.createGroup(groupNameField.text, window.selectedUsers)
                     }
@@ -625,7 +625,7 @@ ApplicationWindow {
             }
             Button {
                 Layout.fillWidth: true
-                text: T("done")
+                text: txt("done")
                 highlighted: true
                 onClicked: sharePopup.close()
             }
@@ -653,7 +653,7 @@ ApplicationWindow {
             width: parent.width
             spacing: 12
             Label {
-                text: T("delete_title")
+                text: txt("delete_title")
                 font.pixelSize: 20
                 font.bold: true
             }
@@ -669,12 +669,12 @@ ApplicationWindow {
                 Button {
                     Layout.fillWidth: true
                     flat: true
-                    text: T("cancel")
+                    text: txt("cancel")
                     onClicked: deletePopup.close()
                 }
                 Button {
                     Layout.fillWidth: true
-                    text: T("delete")
+                    text: txt("delete")
                     Material.background: "#da3633"
                     Material.foreground: "white"
                     onClicked: {
@@ -702,11 +702,11 @@ ApplicationWindow {
             spacing: 10
 
             Label {
-                text: T("settings")
+                text: txt("settings")
                 font.pixelSize: 20
                 font.bold: true
             }
-            Label { text: T("language"); color: window.mutedColor; font.pixelSize: 12 }
+            Label { text: txt("language"); color: window.mutedColor; font.pixelSize: 12 }
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 6
@@ -725,7 +725,7 @@ ApplicationWindow {
                     onClicked: backend.setLanguage("en")
                 }
             }
-            Label { text: T("server"); color: window.mutedColor; font.pixelSize: 12 }
+            Label { text: txt("server"); color: window.mutedColor; font.pixelSize: 12 }
             TextField {
                 id: serverField
                 Layout.fillWidth: true
@@ -738,7 +738,7 @@ ApplicationWindow {
                 Button {
                     Layout.fillWidth: true
                     flat: true
-                    text: T("server_reset")
+                    text: txt("server_reset")
                     onClicked: {
                         serverField.text = backend.defaultServerUrl
                         backend.setServerUrl(serverField.text)
@@ -746,7 +746,7 @@ ApplicationWindow {
                 }
                 Button {
                     Layout.fillWidth: true
-                    text: T("done")
+                    text: txt("done")
                     highlighted: true
                     onClicked: {
                         backend.setServerUrl(serverField.text)
@@ -758,13 +758,13 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 font.pixelSize: 12
                 color: backend.online ? "#3fb950" : "#f85149"
-                text: backend.online ? T("online") : T("offline")
+                text: backend.online ? txt("online") : txt("offline")
             }
             Button {
                 Layout.fillWidth: true
                 visible: backend.loggedIn
                 flat: true
-                text: T("sign_out")
+                text: txt("sign_out")
                 Material.foreground: "#f85149"
                 onClicked: {
                     settingsPopup.close()
@@ -776,7 +776,7 @@ ApplicationWindow {
                 horizontalAlignment: Text.AlignHCenter
                 font.pixelSize: 11
                 color: window.mutedColor
-                text: fill(T("version"), { v: backend.version })
+                text: fill(txt("version"), { v: backend.version })
             }
         }
     }
