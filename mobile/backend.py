@@ -80,6 +80,9 @@ class Backend(QObject):
         self._search = ""
         self._category = ""
         self._last_refresh = 0.0
+        # Bumped on every sign-out: an answer to a request that was started in
+        # an earlier session must not fill the screen of the next one.
+        self._generation = 0
 
         self._done.connect(self._finish)
         self._restore_session()
@@ -94,22 +97,26 @@ class Backend(QObject):
             self._busy_count += 1
             self.busyChanged.emit()
 
+        generation = self._generation
+
         def target():
             try:
                 result = work()
             except Exception as error:  # delivered to the GUI thread
-                self._done.emit((on_ok, on_error, show_busy), None, error)
+                self._done.emit((on_ok, on_error, show_busy, generation), None, error)
             else:
-                self._done.emit((on_ok, on_error, show_busy), result, None)
+                self._done.emit((on_ok, on_error, show_busy, generation), result, None)
 
         threading.Thread(target=target, daemon=True).start()
 
     @Slot(object, object, object)
     def _finish(self, callbacks, result, error):
-        on_ok, on_error, show_busy = callbacks
+        on_ok, on_error, show_busy, generation = callbacks
         if show_busy:
             self._busy_count = max(0, self._busy_count - 1)
             self.busyChanged.emit()
+        if generation != self._generation:
+            return  # the user signed out meanwhile; drop the late answer
         if error is None:
             self._set_online(True)
             if on_ok:
@@ -123,9 +130,13 @@ class Backend(QObject):
 
     def _report(self, error):
         if isinstance(error, ApiError):
-            if error.is_unauthorized and self._logged_in:
+            if error.status == 429:
+                self.message.emit(self._t("err_too_many_attempts"), True)
+            elif error.is_unauthorized and self._logged_in:
                 self._sign_out()
                 self.message.emit(self._t("err_session"), True)
+            elif error.is_unauthorized:
+                self.message.emit(self._t("err_bad_credentials"), True)
             else:
                 self.message.emit(error.detail, True)
         elif isinstance(error, NetworkError):
@@ -144,7 +155,11 @@ class Backend(QObject):
         user_id = self._settings.value("user_id", None)
         username = self._settings.value("username", "")
         if token and user_id not in (None, "") and username:
-            self._client.restore_session(token, int(user_id), username)
+            try:
+                user_id = int(user_id)
+            except (TypeError, ValueError):
+                return  # damaged saved session: start signed out
+            self._client.restore_session(token, user_id, username)
             self._logged_in = True
 
     def _save_session(self):
@@ -154,6 +169,7 @@ class Backend(QObject):
         self._settings.sync()
 
     def _sign_out(self):
+        self._generation += 1
         self._client.logout()
         for key in ("token", "user_id", "username"):
             self._settings.remove(key)
@@ -265,6 +281,11 @@ class Backend(QObject):
         url = normalize_server_url(url)
         if url == self._client.base_url:
             return
+        if self._logged_in:
+            # The sign-in token belongs to the old server; never send it to a
+            # different address.
+            self._sign_out()
+            self.message.emit(self._t("server_changed_signed_out"), False)
         self._client.base_url = url
         self._settings.setValue("server_url", url)
         self.serverUrlChanged.emit()
@@ -301,6 +322,9 @@ class Backend(QObject):
         username = username.strip()
         if not username or not password:
             self.message.emit(self._t("err_fill_fields"), True)
+            return
+        if len(password) < 8:
+            self.message.emit(self._t("err_password_short"), True)
             return
 
         def done(_data):
