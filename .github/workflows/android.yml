@@ -1,0 +1,140 @@
+name: Build Android APK
+
+# Kept separate from release.yml on purpose: the Android toolchain is newer and
+# a failure here must never block the desktop installers from being published.
+
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android.yml"
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Qt for Python version used for the Android wheels and the deploy tool.
+  # Keep it at 6.12.0 or newer: only from 6.12.0 are the Android wheels built
+  # for the stable ABI (cp310-abi3) and the deploy tool pins python-for-android.
+  # The 6.10.0 wheels target CPython 3.11, but the tool then pulled the moving
+  # python-for-android "develop" branch (CPython 3.14), and the app closed
+  # right after the splash screen.
+  PYSIDE_VERSION: "6.12.0"
+
+jobs:
+  android:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: version
+        name: Verify release version
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match VERSION $version" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Run client tests
+        run: python3 -m unittest tests.test_mobile_api tests.test_mobile_logic tests.test_mobile_strings
+
+      # The host Python only runs the tools; any version from 3.10 to 3.14 works
+      # with Qt for Python 6.12.0. The app itself runs on the CPython that
+      # python-for-android builds (3.14).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Qt for Python tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "PySide6==${PYSIDE_VERSION}"
+          # Dependencies of pyside6-android-deploy itself (pkginfo, jinja2, ...).
+          python -m pip install -r "$(python -c 'import os, PySide6; print(os.path.join(os.path.dirname(PySide6.__file__), "scripts", "requirements-android.txt"))')"
+
+      - name: Download Android wheels for PySide6 and shiboken6
+        run: |
+          # The open-source Android wheels are published on download.qt.io
+          # (PySide6 and shiboken6 in separate folders); the commercial wheel
+          # installer does not serve them and downloads nothing without a license.
+          mkdir -p android-wheels
+          cd android-wheels
+          base="https://download.qt.io/official_releases/QtForPython"
+          tag="${PYSIDE_VERSION}-${PYSIDE_VERSION}-cp310-abi3-android_aarch64.whl"
+          # Releases from 6.11 publish the wheel with a lower-case prefix.
+          curl -fL --retry 3 --retry-delay 5 -O "$base/pyside6/pyside6-$tag" \
+            || curl -fL --retry 3 --retry-delay 5 -O "$base/pyside6/PySide6-$tag"
+          curl -fL --retry 3 --retry-delay 5 -O "$base/shiboken6/shiboken6-$tag"
+          echo "Downloaded files:"
+          ls -la
+
+      - name: Download Android NDK and SDK
+        run: |
+          git clone --depth 1 --branch "v${PYSIDE_VERSION}" https://code.qt.io/pyside/pyside-setup "$RUNNER_TEMP/pyside-setup"
+          tool_dir="$RUNNER_TEMP/pyside-setup/tools/cross_compile_android"
+          # The helper imports git (GitPython), jinja2, tqdm and packaging, but its
+          # requirements.txt does not list packaging.
+          if [ -f "$tool_dir/requirements.txt" ]; then
+            python -m pip install -r "$tool_dir/requirements.txt"
+          fi
+          python -m pip install GitPython packaging
+          python "$tool_dir/main.py" --download-only --skip-update --auto-accept-license
+
+      - name: Build APK
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          pyside_wheel="$(find ../android-wheels -type f -iname 'pyside6-*.whl' | head -n 1)"
+          shiboken_wheel="$(find ../android-wheels -type f -iname 'shiboken6-*.whl' | head -n 1)"
+          if [ -z "$pyside_wheel" ] || [ -z "$shiboken_wheel" ]; then
+            echo "Android wheels not found. Everything under android-wheels:" >&2
+            find ../android-wheels -print >&2
+            exit 1
+          fi
+          case "$pyside_wheel$shiboken_wheel" in
+            *cp311-cp311*)
+              echo "These wheels target CPython 3.11 but the app runs CPython 3.14; use abi3 wheels." >&2
+              exit 1 ;;
+          esac
+          echo "PySide6 wheel:   $pyside_wheel"
+          echo "shiboken6 wheel: $shiboken_wheel"
+          pyside6-android-deploy \
+            --name TaskStack \
+            --wheel-pyside "$pyside_wheel" \
+            --wheel-shiboken "$shiboken_wheel" \
+            --force
+          find . -name "*.apk" -print
+
+      - name: Name the APK
+        env:
+          APP_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          mkdir -p release-assets
+          apk="$(find mobile -name "*.apk" | head -n 1)"
+          test -n "$apk"
+          cp "$apk" "release-assets/TaskStack-${APP_VERSION}-android-aarch64.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taskstack-android-aarch64
+          path: release-assets/*.apk
+          if-no-files-found: error
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: release-assets/*.apk

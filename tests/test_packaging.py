@@ -33,13 +33,36 @@ class PackagingTests(unittest.TestCase):
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-        self.assertEqual(version, "1.3.0")
+        self.assertEqual(version, "1.4.0")
         self.assertIn(f"## {version}", changelog)
         self.assertIn(f"Version: {version}", readme)
         self.assertIn("Установка", readme)
         self.assertIn("Installation", readme)
         self.assertIn("Сборка из исходного кода", readme)
         self.assertIn("Build from source", readme)
+
+    def test_android_build_is_separate_from_the_desktop_release(self):
+        android = (ROOT / ".github" / "workflows" / "android.yml").read_text(
+            encoding="utf-8"
+        )
+        desktop = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("pyside6-android-deploy", android)
+        # Qt for Python < 6.12 wheels target CPython 3.11 while the app runs 3.14,
+        # and qtpip serves only commercial wheels (it downloads nothing otherwise).
+        self.assertIn('PYSIDE_VERSION: "6.12.0"', android)
+        self.assertIn("cp310-abi3-android_aarch64", android)
+        self.assertNotIn("cp311-cp311-android", android)
+        self.assertIn('python-version: "3.11"', android)
+        self.assertNotIn("qtpip", android)
+        self.assertIn("download.qt.io/official_releases/QtForPython", android)
+        self.assertIn("android-aarch64.apk", android)
+        self.assertNotIn("android", desktop.lower())
+        for name in ("main.py", "backend.py", "qml/Main.qml"):
+            with self.subTest(file=name):
+                self.assertTrue((ROOT / "mobile" / name).is_file())
 
     def test_platform_package_definitions_are_present(self):
         required_files = (
