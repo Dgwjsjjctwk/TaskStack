@@ -1394,44 +1394,67 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Ошибка" if self.current_lang == "ru" else "Error", "Выберите задачу для удаления!" if self.current_lang == "ru" else "Select a task to delete!")
 
     def clear_tasks(self):
-        if self.task_list.count() > 0:
-            answer = QMessageBox.question(
+        """Удалить завершённые задачи, владельцем которых является пользователь.
+
+        Активные задачи и чужие общие задачи не затрагиваются, а в вопросе
+        подтверждения указано точное число удаляемых задач.
+        """
+        ru = self.current_lang == "ru"
+        completed_rows = []
+        for i in range(self.task_list.count() - 1, -1, -1):
+            widget = self.task_list.itemWidget(self.task_list.item(i))
+            if (
+                widget
+                and widget.is_completed()
+                and getattr(widget, "owner_id", self.user_id) == self.user_id
+            ):
+                completed_rows.append(i)
+
+        if not completed_rows:
+            QMessageBox.information(
                 self,
-                "Подтверждение" if self.current_lang == "ru" else "Confirmation",
-                "Вы уверены, что хотите очистить весь список?" if self.current_lang == "ru" else "Are you sure you want to clear the entire list?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                "Информация" if ru else "Information",
+                "Нет завершённых задач для очистки." if ru else "There are no completed tasks to clear.",
             )
-            if answer == QMessageBox.StandardButton.Yes:
-                failed_deletions = 0
-                for i in range(self.task_list.count() - 1, -1, -1):
-                    item = self.task_list.item(i)
-                    widget = self.task_list.itemWidget(item)
-                    if getattr(widget, "owner_id", self.user_id) != self.user_id:
-                        continue
-                    if widget and hasattr(widget, "task_id") and widget.task_id is not None:
-                        try:
-                            req = server_request(
-                                f"{SERVER_URL}/tasks/{widget.task_id}",
-                                method='DELETE'
-                            )
-                            urllib.request.urlopen(req, timeout=2)
-                        except Exception as e:
-                            logger.error(f"Не удалось удалить задачу с сервера: {e}")
-                            failed_deletions += 1
-                            continue
-                    self.task_list.takeItem(i)
-                
-                if failed_deletions:
-                    message = (
-                        f"Не удалось удалить задач: {failed_deletions}"
-                        if self.current_lang == "ru"
-                        else f"Could not delete tasks: {failed_deletions}"
+            return
+
+        count = len(completed_rows)
+        answer = QMessageBox.question(
+            self,
+            "Подтверждение" if ru else "Confirmation",
+            (
+                f"Удалить завершённые задачи: {count}?\nЭто действие нельзя отменить."
+                if ru
+                else f"Delete completed tasks: {count}?\nThis cannot be undone."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        failed_deletions = 0
+        for i in completed_rows:  # from the bottom up, so row numbers stay valid
+            widget = self.task_list.itemWidget(self.task_list.item(i))
+            if widget and hasattr(widget, "task_id") and widget.task_id is not None:
+                try:
+                    req = server_request(
+                        f"{SERVER_URL}/tasks/{widget.task_id}",
+                        method='DELETE'
                     )
-                    QMessageBox.warning(self, "Ошибка" if self.current_lang == "ru" else "Error", message)
-                self.search_input.clear()
-                self.category_filter_combo.setCurrentIndex(0)
-                self.set_status_filter("all")
-                self.update_stats()
-                logger.info("Очищен весь список задач.")
-        else:
-            QMessageBox.warning(self, "Информация" if self.current_lang == "ru" else "Information", "Список задач уже пуст!" if self.current_lang == "ru" else "Task list is already empty!")
+                    urllib.request.urlopen(req, timeout=3)
+                except Exception as e:
+                    logger.error(f"Не удалось удалить задачу с сервера: {e}")
+                    failed_deletions += 1
+                    continue
+            self.task_list.takeItem(i)
+
+        if failed_deletions:
+            message = (
+                f"Не удалось удалить задач: {failed_deletions}"
+                if ru
+                else f"Could not delete tasks: {failed_deletions}"
+            )
+            QMessageBox.warning(self, "Ошибка" if ru else "Error", message)
+        self.update_stats()
+        self.apply_filters()
+        logger.info("Удалено завершённых задач: %d", count - failed_deletions)
