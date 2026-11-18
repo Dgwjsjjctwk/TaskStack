@@ -19,7 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 try:
     from PyQt6.QtWidgets import QApplication
-except ImportError:  # pragma: no cover - PyQt6 is a requirement of the app
+except ImportError:
+    if os.environ.get("CI"):
+        raise  # in CI a missing Qt library must fail, not hide these tests
     QApplication = None
 
 try:
