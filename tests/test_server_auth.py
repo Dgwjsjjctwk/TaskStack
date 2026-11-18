@@ -275,6 +275,23 @@ class ServerAuthenticationTests(unittest.TestCase):
             {"message": "Задача удалена"},
         )
 
+    def test_tasks_are_listed_in_creation_order(self):
+        owner = server.register_user(
+            server.UserRegisterModel(username="owner", password="password-owner")
+        )
+        owner_user = {"id": owner["id"], "username": "owner"}
+        created = [
+            server.add_task(
+                server.TaskModel(user_id=owner["id"], title=f"task {number}"),
+                owner_user,
+            )["id"]
+            for number in range(5)
+        ]
+
+        listed = [task["id"] for task in server.get_tasks(owner["id"], owner_user)]
+
+        self.assertEqual(listed, sorted(created))
+
     def test_postgres_sql_translation(self):
         create = server._postgres_sql(
             "CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER)"

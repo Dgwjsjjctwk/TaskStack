@@ -757,6 +757,7 @@ def get_tasks(user_id: int, current_user: CurrentUser):
             LEFT JOIN group_members gm ON gs.group_id = gm.group_id
             LEFT JOIN groups g ON gs.group_id = g.id
             WHERE t.user_id = ? OR s.user_id = ? OR gm.user_id = ? OR g.creator_id = ?
+            ORDER BY t.id
             """,
             (current_user["id"],) * 4,
         ).fetchall()
