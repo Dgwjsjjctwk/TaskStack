@@ -1,6 +1,6 @@
 [project]
 name = "taskstack-mobile"
-version = "1.4.0"
+version = "1.4.1"
 requires-python = ">=3.11"
 
 # Files bundled into the Android app. pyside6-android-deploy reads this list
