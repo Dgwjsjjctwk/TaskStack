@@ -48,13 +48,15 @@ def run_async(func, on_done=None, on_error=None):
         try:
             result = func()
         except Exception as error:  # delivered to on_error, not lost
+            # Python unbinds `error` when this block ends, so the callback
+            # (which runs later, on the UI thread) must capture it now.
             if on_error is not None:
-                bus.message.emit(lambda: on_error(error))
+                bus.message.emit(lambda failure=error: on_error(failure))
             else:
                 logger.error("Запрос завершился ошибкой: %s", error)
         else:
             if on_done is not None:
-                bus.message.emit(lambda: on_done(result))
+                bus.message.emit(lambda value=result: on_done(value))
 
     thread = threading.Thread(target=work, name="taskstack-request", daemon=True)
     thread.start()

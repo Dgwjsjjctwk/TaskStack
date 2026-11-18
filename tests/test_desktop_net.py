@@ -101,7 +101,7 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(clear_completed(Api(), [1, 2, 3, 4]), ([1, 4], [2, 3]))
 
     def test_shared_client_is_the_android_one(self):
-        self.assertIs(desktop_net.TaskStackClient.__module__, "taskstack_api")
+        self.assertEqual(desktop_net.TaskStackClient.__module__, "taskstack_api")
         self.assertEqual(desktop_net.client.timeout, desktop_net.SERVER_WAKE_TIMEOUT)
 
 
