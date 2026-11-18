@@ -1,6 +1,6 @@
 # TaskStack Mobile (Android) / Мобильное приложение
 
-Version 1.4.0 · PySide6 + Qt Quick (QML) · talks to the existing TaskStack API.
+Version 1.4.1 · PySide6 + Qt Quick (QML) · talks to the existing TaskStack API.
 
 ## Что это / What it is
 

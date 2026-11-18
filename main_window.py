@@ -1,9 +1,7 @@
 import logging
-import json
-import urllib.request
 import urllib.error
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QLabel, QLineEdit, QPushButton, 
+    QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton, 
     QListWidget, QVBoxLayout, QHBoxLayout, QMessageBox, QListWidgetItem,
     QDialog, QSlider, QComboBox, QProgressBar, QDateTimeEdit, QSystemTrayIcon, QMenu, QTextEdit, QCheckBox,
     QGraphicsOpacityEffect, QSizePolicy
@@ -13,28 +11,17 @@ from PyQt6.QtGui import QColor, QIcon
 from config import (
     ORGANIZATION_NAME, APPLICATION_NAME, DEFAULT_OPACITY, 
     DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, TRANSLATIONS, 
-    AI_URL, AI_MODEL, AI_API_KEY, SERVER_URL
+    AI_URL, AI_MODEL, AI_API_KEY
 )
+from desktop_net import (
+    ApiError, ServerProbe, client, clear_completed, describe_error, request_ai_task
+)
+from qt_async import run_async
 
 logger = logging.getLogger("MainWindow")
-_server_access_token = None
 
-
-def set_server_access_token(token):
-    global _server_access_token
-    _server_access_token = token
-
-
-def server_request(url, data=None, headers=None, method=None):
-    request_headers = dict(headers or {})
-    if _server_access_token:
-        request_headers["Authorization"] = f"Bearer {_server_access_token}"
-    return urllib.request.Request(
-        url,
-        data=data,
-        headers=request_headers,
-        method=method,
-    )
+# How often the network indicator asks the server whether it is alive.
+HEARTBEAT_INTERVAL_MS = 30_000
 
 
 class AuthDialog(QDialog):
@@ -92,39 +79,47 @@ class AuthDialog(QDialog):
             QMessageBox.warning(self, "Ошибка", "Заполните все поля!")
             return
 
-        endpoint = "/register" if self.is_register_mode else "/login"
-        payload = {"username": username, "password": password}
+        register = self.is_register_mode
 
-        try:
-            req = server_request(
-                f"{SERVER_URL}{endpoint}",
-                data=json.dumps(payload).encode('utf-8'),
-                headers={'Content-Type': 'application/json'},
-                method='POST'
-            )
-            with urllib.request.urlopen(req, timeout=5) as response:
-                res_data = json.loads(response.read().decode('utf-8'))
-                
-                if self.is_register_mode:
-                    QMessageBox.information(self, "Успех", "Регистрация успешна! Теперь выполните вход.")
-                    self.toggle_mode()
-                else:
-                    self.user_id = res_data.get("id")
-                    self.username = res_data.get("username")
-                    self.access_token = res_data.get("access_token")
-                    if not self.access_token:
-                        raise ValueError("Сервер не вернул токен авторизации")
-                    set_server_access_token(self.access_token)
-                    self.accept()
-        except urllib.error.HTTPError as e:
-            try:
-                error_body = json.loads(e.read().decode('utf-8'))
-                detail = error_body.get("detail", "Ошибка авторизации")
-            except Exception:
-                detail = "Ошибка авторизации"
-            QMessageBox.critical(self, "Ошибка", detail)
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка сети", f"Не удалось связаться с сервером: {e}")
+        # The server may be asleep and need up to a minute to answer; the call
+        # runs on a worker thread, so the window stays alive and says so.
+        self.submit_btn.setEnabled(False)
+        self.submit_btn.setText("Подключение к серверу… (до минуты, если он спал)")
+
+        def request():
+            if register:
+                return client.register(username, password)
+            return client.login(username, password)
+
+        run_async(
+            request,
+            lambda data: self._on_auth_done(register, data),
+            self._on_auth_failed,
+        )
+
+    def _restore_submit_button(self):
+        self.submit_btn.setEnabled(True)
+        # The mode may have just changed (successful registration).
+        self.submit_btn.setText("Зарегистрироваться" if self.is_register_mode else "Войти")
+
+    def _on_auth_done(self, register, data):
+        self._restore_submit_button()
+        if register:
+            QMessageBox.information(self, "Успех", "Регистрация успешна! Теперь выполните вход.")
+            self.toggle_mode()
+            self._restore_submit_button()
+            return
+        self.user_id = data.get("id")
+        self.username = data.get("username")
+        self.access_token = data.get("access_token")
+        self.accept()
+
+    def _on_auth_failed(self, error):
+        self._restore_submit_button()
+        if isinstance(error, ApiError):
+            QMessageBox.critical(self, "Ошибка", error.detail or "Ошибка авторизации")
+        else:
+            QMessageBox.critical(self, "Ошибка сети", f"Не удалось связаться с сервером: {describe_error(error)}")
 
 
 class GroupCreateDialog(QDialog):
@@ -157,26 +152,27 @@ class GroupCreateDialog(QDialog):
         cancel_btn = QPushButton("Отмена")
         cancel_btn.clicked.connect(self.reject)
 
-        save_btn = QPushButton("Создать")
-        save_btn.setObjectName("AddButton")
-        save_btn.clicked.connect(self.save_group)
+        self.save_btn = QPushButton("Создать")
+        self.save_btn.setObjectName("AddButton")
+        self.save_btn.clicked.connect(self.save_group)
 
         btn_layout.addWidget(cancel_btn)
-        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(self.save_btn)
         layout.addLayout(btn_layout)
 
     def load_users(self):
-        try:
-            req = server_request(f"{SERVER_URL}/users?exclude_id={self.current_user_id}", method="GET")
-            with urllib.request.urlopen(req, timeout=3) as response:
-                users = json.loads(response.read().decode('utf-8'))
-                for user in users:
-                    item = QListWidgetItem(user["username"])
-                    item.setData(Qt.ItemDataRole.UserRole, user["id"])
-                    item.setCheckState(Qt.CheckState.Unchecked)
-                    self.members_list.addItem(item)
-        except Exception as e:
-            logger.error(f"Не удалось загрузить пользователей для группы: {e}")
+        run_async(client.list_users, self._fill_users, self._users_failed)
+
+    def _fill_users(self, users):
+        for user in users:
+            item = QListWidgetItem(user["username"])
+            item.setData(Qt.ItemDataRole.UserRole, user["id"])
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self.members_list.addItem(item)
+
+    def _users_failed(self, error):
+        logger.error(f"Не удалось загрузить пользователей для группы: {error}")
+        self.members_list.addItem(f"⚠ Не удалось загрузить: {describe_error(error)}")
 
     def save_group(self):
         name = self.name_input.text().strip()
@@ -190,31 +186,23 @@ class GroupCreateDialog(QDialog):
             if item.checkState() == Qt.CheckState.Checked:
                 member_ids.append(item.data(Qt.ItemDataRole.UserRole))
 
-        payload = {
-            "name": name,
-            "creator_id": self.current_user_id,
-            "member_ids": member_ids
-        }
+        self.save_btn.setEnabled(False)
+        run_async(
+            lambda: client.create_group(name, member_ids),
+            self._group_saved,
+            self._group_failed,
+        )
 
-        try:
-            req = server_request(
-                f"{SERVER_URL}/groups",
-                data=json.dumps(payload).encode('utf-8'),
-                headers={'Content-Type': 'application/json'},
-                method='POST'
-            )
-            with urllib.request.urlopen(req, timeout=3) as response:
-                self.group_created = True
-                self.accept()
-        except urllib.error.HTTPError as e:
-            try:
-                err = json.loads(e.read().decode('utf-8'))
-                msg = err.get("detail", "Ошибка создания группы")
-            except Exception:
-                msg = "Ошибка создания группы"
-            QMessageBox.critical(self, "Ошибка", msg)
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка сети", f"Не удалось создать группу: {e}")
+    def _group_saved(self, _result):
+        self.group_created = True
+        self.accept()
+
+    def _group_failed(self, error):
+        self.save_btn.setEnabled(True)
+        if isinstance(error, ApiError):
+            QMessageBox.critical(self, "Ошибка", error.detail or "Ошибка создания группы")
+        else:
+            QMessageBox.critical(self, "Ошибка сети", f"Не удалось создать группу: {describe_error(error)}")
 
 
 class ShareDialog(QDialog):
@@ -269,26 +257,40 @@ class ShareDialog(QDialog):
     def load_data(self):
         self.users_list.clear()
         self.groups_list.clear()
-        try:
-            req_u = server_request(f"{SERVER_URL}/users?exclude_id={self.current_user_id}", method="GET")
-            with urllib.request.urlopen(req_u, timeout=3) as resp_u:
-                users = json.loads(resp_u.read().decode('utf-8'))
-                for user in users:
-                    item = QListWidgetItem(f"👤 {user['username']}")
-                    item.setData(Qt.ItemDataRole.UserRole, user["id"])
-                    item.setCheckState(Qt.CheckState.Unchecked)
-                    self.users_list.addItem(item)
+        self.users_list.addItem("Загрузка…")
+        self._load_generation = getattr(self, "_load_generation", 0) + 1
+        generation = self._load_generation
 
-            req_g = server_request(f"{SERVER_URL}/groups?user_id={self.current_user_id}", method="GET")
-            with urllib.request.urlopen(req_g, timeout=3) as resp_g:
-                groups = json.loads(resp_g.read().decode('utf-8'))
-                for group in groups:
-                    item = QListWidgetItem(f"🏢 {group['name']} (участников: {len(group['member_ids'])})")
-                    item.setData(Qt.ItemDataRole.UserRole, group["id"])
-                    item.setCheckState(Qt.CheckState.Unchecked)
-                    self.groups_list.addItem(item)
-        except Exception as e:
-            logger.error(f"Не удалось загрузить данные для шеринга: {e}")
+        def fetch():
+            return client.list_users(), client.list_groups()
+
+        run_async(
+            fetch,
+            lambda data: self._fill_data(generation, *data),
+            lambda error: self._data_failed(generation, error),
+        )
+
+    def _fill_data(self, generation, users, groups):
+        if generation != self._load_generation:
+            return  # a newer load (after creating a group) is on its way
+        self.users_list.clear()
+        for user in users:
+            item = QListWidgetItem(f"👤 {user['username']}")
+            item.setData(Qt.ItemDataRole.UserRole, user["id"])
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self.users_list.addItem(item)
+        for group in groups:
+            item = QListWidgetItem(f"🏢 {group['name']} (участников: {len(group['member_ids'])})")
+            item.setData(Qt.ItemDataRole.UserRole, group["id"])
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self.groups_list.addItem(item)
+
+    def _data_failed(self, generation, error):
+        if generation != self._load_generation:
+            return
+        logger.error(f"Не удалось загрузить данные для шеринга: {error}")
+        self.users_list.clear()
+        self.users_list.addItem(f"⚠ Не удалось загрузить: {describe_error(error)}")
 
     def filter_users(self, text):
         query = text.strip().lower()
@@ -321,141 +323,6 @@ class ShareDialog(QDialog):
 
 
 class TaskItemWidget(QWidget):
-    """Профессиональный виджет задачи: кнопки слева, текст в центре, метаданные справа"""
-    def __init__(self, text, completed=False, priority="⚡ Средний", category="💻 Разработка", deadline="", author=""):
-        super().__init__()
-        self.setStyleSheet("background: transparent;")
-        self.setFixedHeight(44) # Комфортная высота строки без обрезки текста
-        
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 2, 8, 2)
-        layout.setSpacing(10)
-        
-        self.priority = priority
-        self.category = category
-        self.deadline = deadline
-        
-        # 1. Кнопки управления статусом слева (всегда видны, не обрежутся)
-        self.green_btn = QPushButton("✓")
-        self.green_btn.setObjectName("GreenBtn")
-        self.green_btn.setFixedSize(24, 24)
-        self.green_btn.setToolTip("Выполнить")
-        self.green_btn.clicked.connect(self.set_completed)
-        
-        self.red_btn = QPushButton("✕")
-        self.red_btn.setObjectName("RedBtn")
-        self.red_btn.setFixedSize(24, 24)
-        self.red_btn.setToolTip("Вернуть в активные")
-        self.red_btn.clicked.connect(self.set_uncompleted)
-        
-        self.green_btn.setVisible(not completed)
-        self.red_btn.setVisible(completed)
-
-        # 2. Название задачи (занимает всё свободное пространство в центре)
-        self.label = QLabel(text)
-        self.update_text_style(completed)
-        
-        # 3. Метаданные справа (приоритет, категория, дедлайн)
-        p_color = "#8b949e"
-        if "Высокий" in priority or "High" in priority:
-            p_color = "#f87171"
-        elif "Средний" in priority or "Medium" in priority:
-            p_color = "#fbbf24"
-        elif "Низкий" in priority or "Low" in priority:
-            p_color = "#34d399"
-
-        self.priority_label = QLabel(priority)
-        self.priority_label.setStyleSheet(f"color: {p_color}; font-size: 11px; font-weight: bold; background: transparent;")
-        
-        cat_text = f"[{category}]"
-        if author:
-            cat_text = f"👥 [{author}] {cat_text}"
-
-        self.cat_label = QLabel(cat_text)
-        self.cat_label.setStyleSheet("color: #8b949e; font-size: 11px; background: transparent;")
-
-        self.deadline_label = QLabel()
-        self.update_deadline_style(completed)
-        
-        # Собираем макет слева направо
-        layout.addWidget(self.green_btn)
-        layout.addWidget(self.red_btn)
-        layout.addWidget(self.label, 1) # Растягивающийся центр для текста
-        layout.addWidget(self.priority_label)
-        layout.addWidget(self.cat_label)
-        if deadline:
-            layout.addWidget(self.deadline_label)
-        
-    def update_text_style(self, completed):
-        font = self.label.font()
-        font.setStrikeOut(completed)
-        self.label.setFont(font)
-        if completed:
-            self.label.setStyleSheet("color: #9ca3af; background: transparent;")
-            self.green_btn.setVisible(False)
-            self.red_btn.setVisible(True)
-        else:
-            self.label.setStyleSheet("color: #f3f4f6; background: transparent;")
-            self.green_btn.setVisible(True)
-            self.red_btn.setVisible(False)
-
-    def update_deadline_style(self, completed):
-        if not self.deadline:
-            return
-        self.deadline_label.setText(f"📅 {self.deadline}")
-        if not completed:
-            due_datetime = QDateTime.fromString(self.deadline, "yyyy-MM-dd HH:mm")
-            if not due_datetime.isValid():
-                due_date = QDate.fromString(self.deadline, "yyyy-MM-dd")
-                if due_date.isValid():
-                    due_datetime = due_date.startOfDay()
-
-            if due_datetime.isValid() and due_datetime < QDateTime.currentDateTime():
-                self.deadline_label.setStyleSheet("color: #da3633; font-size: 11px; font-weight: bold; background: transparent;")
-            else:
-                self.deadline_label.setStyleSheet("color: #8b949e; font-size: 11px; background: transparent;")
-        else:
-            self.deadline_label.setStyleSheet("color: #6e7681; font-size: 11px; background: transparent;")
-
-    def get_text(self):
-        return self.label.text()
-        
-    def get_priority(self):
-        return self.priority
-
-    def get_category(self):
-        return self.category
-
-    def get_deadline(self):
-        return self.deadline
-
-    def is_completed(self):
-        return self.red_btn.isVisible()
-
-    def update_server_status(self, status):
-        window = self.window()
-        if hasattr(window, "update_task_status_on_server") and hasattr(self, "task_id") and self.task_id is not None:
-            window.update_task_status_on_server(self.task_id, status)
-
-    def set_completed(self):
-        self.update_text_style(True)
-        self.update_deadline_style(True)
-        self.update_server_status(1)
-        logger.info(f"Задача отмечена как выполненная: '{self.get_text()}'")
-        window = self.window()
-        if hasattr(window, "update_stats"):
-            window.update_stats()
-            window.apply_filters()
-        
-    def set_uncompleted(self):
-        self.update_text_style(False)
-        self.update_deadline_style(False)
-        self.update_server_status(0)
-        logger.info(f"Задача возвращена в активные: '{self.get_text()}'")
-        window = self.window()
-        if hasattr(window, "update_stats"):
-            window.update_stats()
-            window.apply_filters()
     """Идеально выровненный виджет задачи с видимыми кнопками и без обрезки текста"""
     def __init__(self, text, completed=False, priority="⚡ Средний", category="💻 Разработка", deadline="", author=""):
         super().__init__()
@@ -661,6 +528,7 @@ class AITaskDialog(QDialog):
         layout.addLayout(btn_layout)
         
         self.task_data = None
+        self._closed = False
 
     def process_with_ai(self):
         prompt_text = self.input_text.toPlainText().strip()
@@ -682,44 +550,35 @@ class AITaskDialog(QDialog):
 - "deadline": дата и время в формате "yyyy-MM-dd HH:mm". Если время не указано, ставь конец текущего дня (23:59).
 """
 
-        payload = {
-            "model": AI_MODEL,
-            "prompt": f"{system_prompt}\n\nТекст пользователя: {prompt_text}",
-            "stream": False
-        }
+        full_prompt = f"{system_prompt}\n\nТекст пользователя: {prompt_text}"
+        run_async(
+            lambda: request_ai_task(AI_URL, AI_MODEL, full_prompt, self.api_key),
+            self._ai_done,
+            self._ai_failed,
+        )
 
-        headers = {'Content-Type': 'application/json'}
-        if self.api_key:
-            headers['Authorization'] = f"Bearer {self.api_key}"
+    def done(self, result):
+        self._closed = True  # a late answer from the AI must not pop up
+        super().done(result)
 
-        try:
-            req = urllib.request.Request(
-                AI_URL,
-                data=json.dumps(payload).encode('utf-8'),
-                headers=headers,
-                method='POST'
-            )
-            
-            with urllib.request.urlopen(req, timeout=15) as response:
-                result = json.loads(response.read().decode('utf-8'))
-                raw_response = result.get("response", "").strip()
-                
-                if raw_response.startswith("```"):
-                    raw_response = raw_response.split("```")[1]
-                    if raw_response.startswith("json"):
-                        raw_response = raw_response[4:].strip()
-                
-                self.task_data = json.loads(raw_response)
-                self.accept()
-                
-        except urllib.error.URLError as e:
-            QMessageBox.critical(self, "Ошибка ИИ", f"Не удалось подключиться к ИИ серверу.\nУбедитесь, что ИИ запущен по адресу {AI_URL}.\nОшибка: {e}")
-            self.generate_btn.setEnabled(True)
-            self.generate_btn.setText("Сгенерировать" if self.current_lang == "ru" else "Generate")
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось разобрать ответ ИИ: {e}")
-            self.generate_btn.setEnabled(True)
-            self.generate_btn.setText("Сгенерировать" if self.current_lang == "ru" else "Generate")
+    def _restore_generate_button(self):
+        self.generate_btn.setEnabled(True)
+        self.generate_btn.setText("Сгенерировать" if self.current_lang == "ru" else "Generate")
+
+    def _ai_done(self, data):
+        if self._closed:
+            return
+        self.task_data = data
+        self.accept()
+
+    def _ai_failed(self, error):
+        if self._closed:
+            return
+        self._restore_generate_button()
+        if isinstance(error, urllib.error.URLError):
+            QMessageBox.critical(self, "Ошибка ИИ", f"Не удалось подключиться к ИИ серверу.\nУбедитесь, что ИИ запущен по адресу {AI_URL}.\nОшибка: {error}")
+        else:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось разобрать ответ ИИ: {error}")
 
     def get_task_data(self):
         return self.task_data
@@ -843,6 +702,14 @@ class MainWindow(QMainWindow):
         self.current_filter = "all"
         self.elapsed_seconds = 0
 
+        # One shared client for the whole app; it is told who is signed in.
+        client.user_id = self.user_id
+        client.username = self.username
+        self._probe = ServerProbe(client)
+        self._probe_running = False
+        self._tasks_generation = 0
+        self._deleting_ids = set()
+
         self.init_ui()
         self.init_tray()
         self.connect_signals()
@@ -857,10 +724,11 @@ class MainWindow(QMainWindow):
         self.session_timer.timeout.connect(self.update_session_timer)
         self.session_timer.start(1000)
 
-        # Таймер пинга сервера (индикатор сети каждые 5 секунд)
+        # Таймер пинга сервера (индикатор сети); первая проверка сразу после запуска
         self.heartbeat_timer = QTimer(self)
         self.heartbeat_timer.timeout.connect(self.check_server_connection)
-        self.heartbeat_timer.start(5000)
+        self.heartbeat_timer.start(HEARTBEAT_INTERVAL_MS)
+        QTimer.singleShot(1000, self.check_server_connection)
 
     def init_tray(self):
         self.tray_available = QSystemTrayIcon.isSystemTrayAvailable()
@@ -888,6 +756,8 @@ class MainWindow(QMainWindow):
         self.setWindowState(Qt.WindowState.WindowNoState)
         self.raise_()
         self.activateWindow()
+        # The indicator is not refreshed while the window is hidden.
+        QTimer.singleShot(0, self.check_server_connection)
 
     def tray_icon_clicked(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
@@ -903,18 +773,27 @@ class MainWindow(QMainWindow):
         QApplication.quit()
 
     def check_server_connection(self):
-        """Пинг сервера для обновления индикатора сети"""
-        try:
-            req = server_request(f"{SERVER_URL}/health", method="GET")
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
-                if resp.status == 200:
-                    self.net_status_label.setText("🟢")
-                    self.net_status_label.setToolTip("Сервер онлайн")
-                    return
-        except Exception:
-            pass
-        self.net_status_label.setText("🔴")
-        self.net_status_label.setToolTip("Нет связи с сервером!")
+        """Лёгкий пинг сервера для индикатора сети.
+
+        Спрашивает /ping, который не обращается к базе данных, а не /health:
+        иначе каждый открытый клиент не давал бы базе и серверу уснуть.
+        Пока окно скрыто в трей или свёрнуто, сервер не опрашивается.
+        """
+        if not self.isVisible() or self.isMinimized():
+            return
+        if self._probe_running:
+            return  # the previous answer has not arrived yet
+        self._probe_running = True
+        run_async(self._probe, self._show_connection, lambda _error: self._show_connection(False))
+
+    def _show_connection(self, online):
+        self._probe_running = False
+        if online:
+            self.net_status_label.setText("🟢")
+            self.net_status_label.setToolTip("Сервер онлайн")
+        else:
+            self.net_status_label.setText("🔴")
+            self.net_status_label.setToolTip("Нет связи с сервером!")
 
     def init_ui(self):
         central_widget = QWidget()
@@ -1106,63 +985,57 @@ class MainWindow(QMainWindow):
                 deadline = data.get("deadline", "")
                 
                 self.send_task_to_server(
-                    title, 0, priority, category, deadline, 
+                    title, priority, category, deadline,
                     self.selected_shared_users, self.selected_shared_groups
                 )
 
-    def send_task_to_server(self, title, status, priority, category, deadline, shared_with_ids=[], shared_with_group_ids=[]):
-        payload = {
-            "title": title,
-            "status": status,
-            "priority": priority,
-            "category": category,
-            "deadline": deadline,
-            "user_id": self.user_id,
-            "author_username": self.username,
-            "shared_with_ids": shared_with_ids,
-            "shared_with_group_ids": shared_with_group_ids
-        }
-        try:
-            req = server_request(
-                f"{SERVER_URL}/tasks",
-                data=json.dumps(payload).encode('utf-8'),
-                headers={'Content-Type': 'application/json'},
-                method='POST'
+    def send_task_to_server(self, title, priority, category, deadline, shared_with_ids=(), shared_with_group_ids=()):
+        shared_users = list(shared_with_ids)
+        shared_groups = list(shared_with_group_ids)
+        run_async(
+            lambda: client.add_task(title, priority, category, deadline, shared_users, shared_groups),
+            lambda result: self._task_sent(result, title, priority, category, deadline, shared_users, shared_groups),
+            lambda error: self._request_failed(error, "Не удалось отправить задачу на сервер"),
+        )
+
+    def _task_sent(self, result, title, priority, category, deadline, shared_users, shared_groups):
+        author_label = self.username if (shared_users or shared_groups) else ""
+        self.add_server_task_item(
+            result.get("id"), title, False, priority, category, deadline,
+            author_label, owner_id=self.user_id
+        )
+        self.selected_shared_users = []
+        self.selected_shared_groups = []
+        self.share_button.setStyleSheet("")
+        self.share_button.setText("👥 Поделиться")
+        self.update_stats()
+        self.apply_filters()
+
+    def _request_failed(self, error, what):
+        """One place that tells the person why a request did not work."""
+        logger.error(f"{what}: {error}")
+        if isinstance(error, ApiError) and error.is_unauthorized:
+            QMessageBox.warning(
+                self,
+                "Сессия истекла" if self.current_lang == "ru" else "Session expired",
+                "Войдите заново: закройте приложение и откройте его снова."
+                if self.current_lang == "ru"
+                else "Please sign in again: close the app and open it again.",
             )
-            with urllib.request.urlopen(req, timeout=3) as response:
-                res_data = json.loads(response.read().decode('utf-8'))
-                new_id = res_data.get("id")
-                
-                author_label = self.username if (shared_with_ids or shared_with_group_ids) else ""
-                self.add_server_task_item(
-                    new_id, title, bool(status), priority, category, deadline,
-                    author_label, owner_id=self.user_id
-                )
-                
-                self.selected_shared_users = []
-                self.selected_shared_groups = []
-                self.share_button.setStyleSheet("")
-                self.share_button.setText("👥 Поделиться")
-                
-                self.update_stats()
-                self.apply_filters()
-        except Exception as e:
-            logger.error(f"Ошибка отправки задачи на сервер: {e}")
-            QMessageBox.critical(self, "Ошибка сети", f"Не удалось отправить задачу на сервер: {e}")
+            return
+        QMessageBox.critical(self, "Ошибка сети", f"{what}: {describe_error(error)}")
 
     def update_task_status_on_server(self, task_id, status):
-        try:
-            payload = {"status": status}
-            req = server_request(
-                f"{SERVER_URL}/tasks/{task_id}/status",
-                data=json.dumps(payload).encode('utf-8'),
-                headers={'Content-Type': 'application/json'},
-                method='PUT'
-            )
-            urllib.request.urlopen(req, timeout=3)
-            logger.info(f"Статус задачи ID {task_id} обновлен на сервере: {status}")
-        except Exception as e:
-            logger.error(f"Не удалось обновить статус задачи на сервере: {e}")
+        run_async(
+            lambda: client.set_task_status(task_id, bool(status)),
+            lambda _result: logger.info(f"Статус задачи ID {task_id} обновлен на сервере: {status}"),
+            lambda error: self._status_failed(error, task_id),
+        )
+
+    def _status_failed(self, error, task_id):
+        logger.error(f"Не удалось обновить статус задачи {task_id} на сервере: {error}")
+        # The list on screen no longer matches the server: show what it really holds.
+        self.load_tasks(quiet=True)
 
     def set_status_filter(self, filter_name):
         self.current_filter = filter_name
@@ -1420,7 +1293,7 @@ class MainWindow(QMainWindow):
         priority = self.priority_combo.currentText()
         
         if text:
-            self.send_task_to_server(text, 0, priority, category, deadline, self.selected_shared_users, self.selected_shared_groups)
+            self.send_task_to_server(text, priority, category, deadline, self.selected_shared_users, self.selected_shared_groups)
             self.task_input.clear()
             self.search_input.clear()
             self.category_filter_combo.setCurrentIndex(0)
@@ -1453,32 +1326,51 @@ class MainWindow(QMainWindow):
             self._anim_pool = []
         self._anim_pool.append((anim, opacity_effect))
 
-    def load_tasks(self):
+    def load_tasks(self, quiet=False):
         """Загрузка задач текущего пользователя и тех, которыми с ним поделились"""
+        self._tasks_generation += 1
+        generation = self._tasks_generation
+        run_async(
+            client.list_tasks,
+            lambda data: self._tasks_loaded(generation, data),
+            lambda error: self._tasks_failed(generation, error, quiet),
+        )
+
+    def _tasks_loaded(self, generation, data):
+        if generation != self._tasks_generation:
+            return  # a newer load superseded this answer
         self.task_list.clear()
-        try:
-            req = server_request(f"{SERVER_URL}/tasks?user_id={self.user_id}", method="GET")
-            with urllib.request.urlopen(req, timeout=3) as response:
-                data = json.loads(response.read().decode('utf-8'))
-                logger.info(f"Загружено задач для {self.username}: {len(data)}")
-                for item_data in data:
-                    task_author = item_data.get("author_username", "")
-                    if task_author == self.username:
-                        task_author = ""
-                        
-                    self.add_server_task_item(
-                        task_id=item_data["id"],
-                        text=item_data["title"],
-                        completed=bool(item_data["status"]),
-                        priority=item_data["priority"],
-                        category=item_data["category"],
-                        deadline=item_data["deadline"],
-                        author=task_author,
-                        owner_id=item_data["user_id"]
-                    )
-        except Exception as e:
-            logger.error(f"Не удалось подключиться к серверу для загрузки задач: {e}")
-            QMessageBox.warning(self, "Ошибка сети", f"Не удалось подключиться к серверу задач!\nОшибка: {e}")
+        logger.info(f"Загружено задач для {self.username}: {len(data)}")
+        for item_data in data:
+            task_author = item_data.get("author_username", "")
+            if task_author == self.username:
+                task_author = ""
+
+            self.add_server_task_item(
+                task_id=item_data["id"],
+                text=item_data["title"],
+                completed=bool(item_data["status"]),
+                priority=item_data["priority"],
+                category=item_data["category"],
+                deadline=item_data["deadline"],
+                author=task_author,
+                owner_id=item_data["user_id"]
+            )
+        self.update_stats()
+        self.apply_filters()
+
+    def _tasks_failed(self, generation, error, quiet):
+        if generation != self._tasks_generation or quiet:
+            logger.error(f"Не удалось загрузить задачи: {error}")
+            return
+        self._request_failed(error, "Не удалось загрузить задачи")
+
+    def _find_row(self, task_id):
+        for i in range(self.task_list.count()):
+            widget = self.task_list.itemWidget(self.task_list.item(i))
+            if widget is not None and getattr(widget, "task_id", None) == task_id:
+                return i
+        return -1
 
     def save_tasks(self):
         pass
@@ -1504,69 +1396,111 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if answer == QMessageBox.StandardButton.Yes:
-                if task_id is not None:
-                    try:
-                        req = server_request(
-                            f"{SERVER_URL}/tasks/{task_id}",
-                            method='DELETE'
-                        )
-                        urllib.request.urlopen(req, timeout=3)
-                        logger.info(f"Задача ID {task_id} удалена с сервера")
-                    except Exception as e:
-                        logger.error(f"Не удалось удалить задачу с сервера: {e}")
-                        QMessageBox.critical(
-                            self,
-                            "Ошибка сети",
-                            f"Не удалось удалить задачу с сервера: {e}"
-                        )
-                        return
-                
-                self.task_list.takeItem(row)
-                self.update_stats()
-                self.apply_filters()
+                if task_id is None:
+                    self.task_list.takeItem(row)
+                    self.update_stats()
+                    self.apply_filters()
+                    return
+                if task_id in self._deleting_ids:
+                    return
+                self._deleting_ids.add(task_id)
+                run_async(
+                    lambda: client.delete_task(task_id),
+                    lambda _result: self._task_deleted(task_id),
+                    lambda error: self._delete_failed(error, task_id),
+                )
         else:
             logger.warning("Попытка удаления без выбора задачи.")
             QMessageBox.warning(self, "Ошибка" if self.current_lang == "ru" else "Error", "Выберите задачу для удаления!" if self.current_lang == "ru" else "Select a task to delete!")
 
+    def _task_deleted(self, task_id):
+        self._deleting_ids.discard(task_id)
+        logger.info(f"Задача ID {task_id} удалена с сервера")
+        row = self._find_row(task_id)
+        if row >= 0:
+            self.task_list.takeItem(row)
+        self.update_stats()
+        self.apply_filters()
+
+    def _delete_failed(self, error, task_id):
+        self._deleting_ids.discard(task_id)
+        self._request_failed(error, "Не удалось удалить задачу с сервера")
+
     def clear_tasks(self):
-        if self.task_list.count() > 0:
-            answer = QMessageBox.question(
+        """Удалить завершённые задачи, владельцем которых является пользователь.
+
+        Активные задачи и чужие общие задачи не затрагиваются, а в вопросе
+        подтверждения указано точное число удаляемых задач.
+        """
+        ru = self.current_lang == "ru"
+        completed_rows = []
+        for i in range(self.task_list.count() - 1, -1, -1):
+            widget = self.task_list.itemWidget(self.task_list.item(i))
+            if (
+                widget
+                and widget.is_completed()
+                and getattr(widget, "owner_id", self.user_id) == self.user_id
+            ):
+                completed_rows.append(i)
+
+        if not completed_rows:
+            QMessageBox.information(
                 self,
-                "Подтверждение" if self.current_lang == "ru" else "Confirmation",
-                "Вы уверены, что хотите очистить весь список?" if self.current_lang == "ru" else "Are you sure you want to clear the entire list?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                "Информация" if ru else "Information",
+                "Нет завершённых задач для очистки." if ru else "There are no completed tasks to clear.",
             )
-            if answer == QMessageBox.StandardButton.Yes:
-                failed_deletions = 0
-                for i in range(self.task_list.count() - 1, -1, -1):
-                    item = self.task_list.item(i)
-                    widget = self.task_list.itemWidget(item)
-                    if getattr(widget, "owner_id", self.user_id) != self.user_id:
-                        continue
-                    if widget and hasattr(widget, "task_id") and widget.task_id is not None:
-                        try:
-                            req = server_request(
-                                f"{SERVER_URL}/tasks/{widget.task_id}",
-                                method='DELETE'
-                            )
-                            urllib.request.urlopen(req, timeout=2)
-                        except Exception as e:
-                            logger.error(f"Не удалось удалить задачу с сервера: {e}")
-                            failed_deletions += 1
-                            continue
-                    self.task_list.takeItem(i)
-                
-                if failed_deletions:
-                    message = (
-                        f"Не удалось удалить задач: {failed_deletions}"
-                        if self.current_lang == "ru"
-                        else f"Could not delete tasks: {failed_deletions}"
-                    )
-                    QMessageBox.warning(self, "Ошибка" if self.current_lang == "ru" else "Error", message)
-                self.search_input.clear()
-                self.category_filter_combo.setCurrentIndex(0)
-                self.set_status_filter("all")
-                self.update_stats()
-                logger.info("Очищен весь список задач.")
-        else:
-            QMessageBox.warning(self, "Информация" if self.current_lang == "ru" else "Information", "Список задач уже пуст!" if self.current_lang == "ru" else "Task list is already empty!")
+            return
+
+        count = len(completed_rows)
+        answer = QMessageBox.question(
+            self,
+            "Подтверждение" if ru else "Confirmation",
+            (
+                f"Удалить завершённые задачи: {count}?\nЭто действие нельзя отменить."
+                if ru
+                else f"Delete completed tasks: {count}?\nThis cannot be undone."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        task_ids = []
+        for i in completed_rows:
+            widget = self.task_list.itemWidget(self.task_list.item(i))
+            task_id = getattr(widget, "task_id", None)
+            if task_id is None:
+                self.task_list.takeItem(i)  # never reached the server (rows go bottom-up)
+            else:
+                task_ids.append(task_id)
+        if not task_ids:
+            self.update_stats()
+            self.apply_filters()
+            return
+
+        self._deleting_ids.update(task_ids)
+        run_async(
+            lambda: clear_completed(client, task_ids),
+            lambda result: self._tasks_cleared(task_ids, *result),
+            lambda error: self._cleared_failed(task_ids, error),
+        )
+
+    def _tasks_cleared(self, task_ids, deleted, failed):
+        self._deleting_ids.difference_update(task_ids)
+        for task_id in deleted:
+            row = self._find_row(task_id)
+            if row >= 0:
+                self.task_list.takeItem(row)
+        self.update_stats()
+        self.apply_filters()
+        if failed:
+            ru = self.current_lang == "ru"
+            QMessageBox.warning(
+                self,
+                "Ошибка" if ru else "Error",
+                f"Не удалось удалить задач: {len(failed)}" if ru else f"Could not delete tasks: {len(failed)}",
+            )
+
+    def _cleared_failed(self, task_ids, error):
+        self._deleting_ids.difference_update(task_ids)
+        self._request_failed(error, "Не удалось очистить задачи")

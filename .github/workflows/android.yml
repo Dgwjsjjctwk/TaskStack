@@ -119,6 +119,12 @@ jobs:
             --force
           find . -name "*.apk" -print
 
+      - name: Show generated build settings
+        if: always()
+        run: |
+          # Diagnostic only: shows where the app version and icon are set.
+          find mobile -maxdepth 3 \( -name pysidedeploy.spec -o -name buildozer.spec \) -print -exec cat {} \; || true
+
       - name: Name the APK
         env:
           APP_VERSION: ${{ steps.version.outputs.value }}

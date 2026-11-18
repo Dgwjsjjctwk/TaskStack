@@ -2,17 +2,21 @@ import base64
 from contextlib import asynccontextmanager, contextmanager
 import hashlib
 import hmac
+import logging
 import os
 import re
 import secrets
 import sqlite3
 import time
+import unicodedata
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from mcp_oauth import create_oauth_router, public_issuer
+
+logger = logging.getLogger("taskstack.server")
 
 DATABASE_PATH = os.environ.get("TASKSTACK_DB_PATH", "server_tasks.db")
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -320,6 +324,109 @@ def init_db():
                 ON DELETE CASCADE
             )
         """)
+    _ensure_username_keys()
+
+
+def normalize_username(username: str) -> str:
+    """Return the name to store, or raise ValueError if it is not acceptable.
+
+    NFKC folds look-alike forms (full-width letters, ligatures) into plain
+    ones; invisible and control characters are refused because they make two
+    different strings look identical on screen.
+    """
+    name = unicodedata.normalize("NFKC", username).strip()
+    if not name:
+        raise ValueError("Имя пользователя обязательно")
+    for char in name:
+        if unicodedata.category(char).startswith("C") or (
+            char.isspace() and char != " "
+        ):
+            raise ValueError("Имя пользователя содержит недопустимые символы")
+    return name
+
+
+def username_key(username: str) -> str:
+    """Case-insensitive comparison key: 'Иван', 'иван' and 'ИВАН' are one name."""
+    return unicodedata.normalize("NFKC", username).strip().casefold()
+
+
+def _ensure_username_keys():
+    """Add and fill users.username_key, the column that makes names unique
+    regardless of case. Safe to run on every start."""
+    try:
+        with connect_db() as conn:
+            conn.execute("SELECT username_key FROM users LIMIT 1")
+    except Exception:
+        with connect_db() as conn:
+            conn.execute("ALTER TABLE users ADD COLUMN username_key TEXT")
+
+    with connect_db() as conn:
+        rows = conn.execute(
+            "SELECT id, username FROM users WHERE username_key IS NULL"
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE users SET username_key = ? WHERE id = ?",
+                (username_key(row["username"]), row["id"]),
+            )
+
+    # Accounts created before this check may already collide (for example
+    # "Ivan" and "ivan"). The index cannot be built then; new registrations are
+    # still checked in register_user, and the old accounts stay usable.
+    try:
+        with connect_db() as conn:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_key "
+                "ON users (username_key)"
+            )
+    except Exception:
+        logger.warning(
+            "Existing accounts differ only by letter case; the unique name index "
+            "was not created. Rename or merge them and restart."
+        )
+
+
+class LoginAttemptLimiter:
+    """Slows down password guessing: too many failures lock the account for a while.
+
+    Kept in memory, so it is per process and resets on restart.
+    """
+
+    def __init__(self, max_failures=5, window=600, lockout=300, clock=time.monotonic):
+        self.max_failures = max_failures
+        self.window = window
+        self.lockout = lockout
+        self._clock = clock
+        self._failures = {}
+        self._locked_until = {}
+
+    def retry_after(self, key: str) -> int:
+        """Seconds until the account may try again, or 0 when it is not locked."""
+        remaining = self._locked_until.get(key, 0) - self._clock()
+        if remaining > 0:
+            return int(remaining) + 1
+        self._locked_until.pop(key, None)
+        return 0
+
+    def record_failure(self, key: str):
+        now = self._clock()
+        recent = [t for t in self._failures.get(key, []) if now - t < self.window]
+        recent.append(now)
+        self._failures[key] = recent
+        if len(recent) >= self.max_failures:
+            self._locked_until[key] = now + self.lockout
+            self._failures.pop(key, None)
+        if len(self._failures) > 10000:
+            self._failures = {
+                k: v for k, v in self._failures.items() if now - v[-1] < self.window
+            }
+
+    def record_success(self, key: str):
+        self._failures.pop(key, None)
+        self._locked_until.pop(key, None)
+
+
+login_limiter = LoginAttemptLimiter()
 
 
 def hash_password(password: str) -> str:
@@ -356,16 +463,25 @@ def verify_password(password: str, stored_hash: str) -> tuple[bool, bool]:
 
 
 def _authenticate_user_credentials(conn, username: str, password: str):
+    key = username_key(username)
+    if login_limiter.retry_after(key):
+        # Even the right password is refused while the account is locked.
+        return None
     row = conn.execute(
-        "SELECT id, username, password FROM users WHERE username = ?",
-        (username.strip(),),
+        "SELECT id, username, password FROM users "
+        "WHERE username_key = ? OR (username_key IS NULL AND username = ?) "
+        "ORDER BY CASE WHEN username = ? THEN 0 ELSE 1 END, id LIMIT 1",
+        (key, username.strip(), username.strip()),
     ).fetchone()
     if row is None:
+        login_limiter.record_failure(key)
         return None
 
     valid, needs_upgrade = verify_password(password, row["password"])
     if not valid:
+        login_limiter.record_failure(key)
         return None
+    login_limiter.record_success(key)
     if needs_upgrade:
         conn.execute(
             "UPDATE users SET password = ? WHERE id = ?",
@@ -501,19 +617,37 @@ def health_check():
     }
 
 
+@app.get("/ping")
+def ping():
+    """Cheap liveness probe for clients; it never touches the database.
+
+    /health also checks the database, which is what the hosting platform needs,
+    but every open desktop client polling it kept a sleeping database awake.
+    """
+    return {"status": "ok"}
+
+
 @app.post("/register")
 def register_user(user: UserRegisterModel):
-    username = user.username.strip()
-    if not username:
-        raise HTTPException(status_code=400, detail="Имя пользователя обязательно")
+    try:
+        username = normalize_username(user.username)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
     if len(user.password) < 8:
         raise HTTPException(status_code=400, detail="Пароль должен содержать не менее 8 символов")
 
+    key = username_key(username)
     with connect_db() as conn:
+        if conn.execute(
+            "SELECT 1 FROM users WHERE username_key = ?", (key,)
+        ).fetchone():
+            raise HTTPException(
+                status_code=400, detail="Пользователь с таким именем уже существует"
+            )
         try:
             cursor = conn.execute(
-                "INSERT INTO users (username, password) VALUES (?, ?)",
-                (username, hash_password(user.password)),
+                "INSERT INTO users (username, username_key, password) VALUES (?, ?, ?)",
+                (username, key, hash_password(user.password)),
             )
             user_id = cursor.lastrowid
         except _integrity_errors():
@@ -525,6 +659,13 @@ def register_user(user: UserRegisterModel):
 
 @app.post("/login")
 def login_user(user: UserRegisterModel):
+    wait = login_limiter.retry_after(username_key(user.username))
+    if wait:
+        raise HTTPException(
+            status_code=429,
+            detail="Слишком много неудачных попыток входа. Попробуйте позже",
+            headers={"Retry-After": str(wait)},
+        )
     with connect_db() as conn:
         authenticated_user = _authenticate_user_credentials(
             conn, user.username, user.password
@@ -626,6 +767,7 @@ def get_tasks(user_id: int, current_user: CurrentUser):
             LEFT JOIN group_members gm ON gs.group_id = gm.group_id
             LEFT JOIN groups g ON gs.group_id = g.id
             WHERE t.user_id = ? OR s.user_id = ? OR gm.user_id = ? OR g.creator_id = ?
+            ORDER BY t.id
             """,
             (current_user["id"],) * 4,
         ).fetchall()
@@ -729,10 +871,17 @@ def update_task_fields(task_id: int, updates: dict, current_user: dict):
                 status_code=403,
                 detail="Only the task owner can update task details",
             )
-        assignments = ", ".join(f"{field} = ?" for field in fields)
+        # Column names come only from this fixed tuple, never from the request;
+        # the values are always bound as parameters.
+        columns = [
+            column
+            for column in ("title", "status", "priority", "category", "deadline")
+            if column in fields
+        ]
+        assignments = ", ".join(f"{column} = ?" for column in columns)
         conn.execute(
             f"UPDATE tasks SET {assignments} WHERE id = ?",
-            (*fields.values(), task_id),
+            (*(fields[column] for column in columns), task_id),
         )
 
 

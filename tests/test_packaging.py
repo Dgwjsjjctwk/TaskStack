@@ -33,7 +33,7 @@ class PackagingTests(unittest.TestCase):
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-        self.assertEqual(version, "1.4.0")
+        self.assertEqual(version, "1.4.1")
         self.assertIn(f"## {version}", changelog)
         self.assertIn(f"Version: {version}", readme)
         self.assertIn("Установка", readme)
@@ -83,6 +83,15 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("AppVersion={#AppVersion}", windows_installer)
         self.assertIn("Exec=TaskStack", linux_desktop)
         self.assertIn('name="TaskStack.app"', macos_spec)
+
+    def test_desktop_build_finds_the_client_shared_with_android(self):
+        spec = (ROOT / "TaskManager.spec").read_text(encoding="utf-8")
+        self.assertIn("import os", spec)
+        self.assertIn("os.path.join(SPECPATH, 'mobile')", spec)
+        self.assertTrue((ROOT / "mobile" / "taskstack_api.py").is_file())
+        # The Android app bundles the same file.
+        pyproject = (ROOT / "mobile" / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn("taskstack_api.py", pyproject)
 
 
 if __name__ == "__main__":

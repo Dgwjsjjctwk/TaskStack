@@ -57,6 +57,8 @@ class FakeTaskStack(BaseHTTPRequestHandler):
         path = parsed.path
         if path == "/health":
             return self._send(200, {"status": "ok"})
+        if path == "/ping":
+            return self._send(200, {"status": "ok"})
         if path == "/login" and method == "POST":
             if body["password"] != "correct-password":
                 return self._send(401, {"detail": "Неверное имя пользователя или пароль"})
@@ -129,6 +131,13 @@ class TaskStackClientTests(unittest.TestCase):
     def logged_in(self):
         self.client.login("ilya", "correct-password")
         return self.client
+
+    def test_ping_and_health_accept_a_shorter_timeout(self):
+        self.assertEqual(self.client.ping(timeout=1.5), {"status": "ok"})
+        self.assertEqual(self.client.health(timeout=1.5), {"status": "ok"})
+        self.assertEqual(
+            [path for _m, path, _b, _a in FakeTaskStack.requests], ["/ping", "/health"]
+        )
 
     def test_normalize_server_url(self):
         self.assertEqual(normalize_server_url(""), DEFAULT_SERVER_URL)
@@ -328,6 +337,10 @@ class TaskStackClientTests(unittest.TestCase):
         client.logout()
         self.assertIsNone(client.token)
         self.assertIsNone(client.user_id)
+
+    def test_default_timeout_outlasts_a_sleeping_free_host(self):
+        # The first request after the server slept can take close to a minute.
+        self.assertGreaterEqual(TaskStackClient().timeout, 45)
 
     def test_unreachable_server_raises_network_error(self):
         client = TaskStackClient("http://127.0.0.1:1", timeout=2)
