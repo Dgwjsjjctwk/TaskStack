@@ -15,6 +15,11 @@ import urllib.request
 
 DEFAULT_SERVER_URL = "https://taskstack-o9vw.onrender.com"
 
+# A free hosting plan puts the server to sleep when it is idle, and the first
+# request after that can take up to about a minute while it starts again.
+# Requests run on worker threads, so a long wait never freezes the screen.
+DEFAULT_TIMEOUT = 60.0
+
 
 # CPython built for Android has no default CA bundle, so HTTPS fails with
 # CERTIFICATE_VERIFY_FAILED unless the system certificate store is loaded.
@@ -104,7 +109,7 @@ def _error_detail(error):
 
 
 class TaskStackClient:
-    def __init__(self, base_url=DEFAULT_SERVER_URL, token=None, timeout=10.0):
+    def __init__(self, base_url=DEFAULT_SERVER_URL, token=None, timeout=DEFAULT_TIMEOUT):
         self.base_url = normalize_server_url(base_url)
         self.token = token
         self.timeout = timeout
@@ -151,7 +156,7 @@ class TaskStackClient:
     # -- account -----------------------------------------------------------
 
     def health(self):
-        return self._request("GET", "/health", timeout=5)
+        return self._request("GET", "/health")
 
     def register(self, username, password):
         return self._request(

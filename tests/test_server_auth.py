@@ -3,7 +3,7 @@ import hashlib
 import re
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -328,6 +328,12 @@ class ServerAuthenticationTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["database"], "sqlite")
+
+    def test_ping_answers_without_touching_the_database(self):
+        with patch.object(
+            server, "connect_db", side_effect=AssertionError("ping used the database")
+        ):
+            self.assertEqual(server.ping(), {"status": "ok"})
 
     def test_postgres_cursor_lastrowid_reads_returning_id(self):
         cursor = Mock()

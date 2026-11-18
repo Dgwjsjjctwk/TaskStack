@@ -3,7 +3,7 @@ import json
 import urllib.request
 import urllib.error
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QLabel, QLineEdit, QPushButton, 
+    QApplication, QMainWindow, QWidget, QLabel, QLineEdit, QPushButton, 
     QListWidget, QVBoxLayout, QHBoxLayout, QMessageBox, QListWidgetItem,
     QDialog, QSlider, QComboBox, QProgressBar, QDateTimeEdit, QSystemTrayIcon, QMenu, QTextEdit, QCheckBox,
     QGraphicsOpacityEffect, QSizePolicy
@@ -18,6 +18,14 @@ from config import (
 
 logger = logging.getLogger("MainWindow")
 _server_access_token = None
+
+# A free hosting plan puts the server to sleep when it is idle, and the first
+# request after that can take up to about a minute while it starts again.
+SERVER_WAKE_TIMEOUT = 60
+# How often the network indicator asks the server whether it is alive.
+HEARTBEAT_INTERVAL_MS = 30_000
+# Servers older than this version have no /ping; the indicator then uses /health.
+_ping_supported = True
 
 
 def set_server_access_token(token):
@@ -95,6 +103,11 @@ class AuthDialog(QDialog):
         endpoint = "/register" if self.is_register_mode else "/login"
         payload = {"username": username, "password": password}
 
+        # The server may be asleep and need up to a minute to answer. The call
+        # blocks the window, so say so on the button and repaint before it starts.
+        self.submit_btn.setEnabled(False)
+        self.submit_btn.setText("Подключение к серверу… (до минуты, если он спал)")
+        QApplication.processEvents()
         try:
             req = server_request(
                 f"{SERVER_URL}{endpoint}",
@@ -102,7 +115,7 @@ class AuthDialog(QDialog):
                 headers={'Content-Type': 'application/json'},
                 method='POST'
             )
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=SERVER_WAKE_TIMEOUT) as response:
                 res_data = json.loads(response.read().decode('utf-8'))
                 
                 if self.is_register_mode:
@@ -125,6 +138,10 @@ class AuthDialog(QDialog):
             QMessageBox.critical(self, "Ошибка", detail)
         except Exception as e:
             QMessageBox.critical(self, "Ошибка сети", f"Не удалось связаться с сервером: {e}")
+        finally:
+            self.submit_btn.setEnabled(True)
+            # The mode may have just changed (successful registration).
+            self.submit_btn.setText("Зарегистрироваться" if self.is_register_mode else "Войти")
 
 
 class GroupCreateDialog(QDialog):
@@ -722,10 +739,11 @@ class MainWindow(QMainWindow):
         self.session_timer.timeout.connect(self.update_session_timer)
         self.session_timer.start(1000)
 
-        # Таймер пинга сервера (индикатор сети каждые 5 секунд)
+        # Таймер пинга сервера (индикатор сети); первая проверка сразу после запуска
         self.heartbeat_timer = QTimer(self)
         self.heartbeat_timer.timeout.connect(self.check_server_connection)
-        self.heartbeat_timer.start(5000)
+        self.heartbeat_timer.start(HEARTBEAT_INTERVAL_MS)
+        QTimer.singleShot(1000, self.check_server_connection)
 
     def init_tray(self):
         self.tray_available = QSystemTrayIcon.isSystemTrayAvailable()
@@ -753,6 +771,8 @@ class MainWindow(QMainWindow):
         self.setWindowState(Qt.WindowState.WindowNoState)
         self.raise_()
         self.activateWindow()
+        # The indicator is not refreshed while the window is hidden.
+        QTimer.singleShot(0, self.check_server_connection)
 
     def tray_icon_clicked(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
@@ -768,18 +788,40 @@ class MainWindow(QMainWindow):
         QApplication.quit()
 
     def check_server_connection(self):
-        """Пинг сервера для обновления индикатора сети"""
-        try:
-            req = server_request(f"{SERVER_URL}/health", method="GET")
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
-                if resp.status == 200:
-                    self.net_status_label.setText("🟢")
-                    self.net_status_label.setToolTip("Сервер онлайн")
-                    return
-        except Exception:
-            pass
-        self.net_status_label.setText("🔴")
-        self.net_status_label.setToolTip("Нет связи с сервером!")
+        """Лёгкий пинг сервера для индикатора сети.
+
+        Спрашивает /ping, который не обращается к базе данных, а не /health:
+        иначе каждый открытый клиент не давал бы базе и серверу уснуть.
+        Пока окно скрыто в трей или свёрнуто, сервер не опрашивается.
+        """
+        global _ping_supported
+        if not self.isVisible() or self.isMinimized():
+            return
+
+        online = None
+        if _ping_supported:
+            try:
+                req = server_request(f"{SERVER_URL}/ping", method="GET")
+                with urllib.request.urlopen(req, timeout=1.5) as resp:
+                    online = resp.status == 200
+            except urllib.error.HTTPError:
+                _ping_supported = False  # older server without /ping
+            except Exception:
+                online = False
+        if online is None:
+            try:
+                req = server_request(f"{SERVER_URL}/health", method="GET")
+                with urllib.request.urlopen(req, timeout=1.5) as resp:
+                    online = resp.status == 200
+            except Exception:
+                online = False
+
+        if online:
+            self.net_status_label.setText("🟢")
+            self.net_status_label.setToolTip("Сервер онлайн")
+        else:
+            self.net_status_label.setText("🔴")
+            self.net_status_label.setToolTip("Нет связи с сервером!")
 
     def init_ui(self):
         central_widget = QWidget()

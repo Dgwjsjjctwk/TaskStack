@@ -617,6 +617,16 @@ def health_check():
     }
 
 
+@app.get("/ping")
+def ping():
+    """Cheap liveness probe for clients; it never touches the database.
+
+    /health also checks the database, which is what the hosting platform needs,
+    but every open desktop client polling it kept a sleeping database awake.
+    """
+    return {"status": "ok"}
+
+
 @app.post("/register")
 def register_user(user: UserRegisterModel):
     try:

@@ -329,6 +329,10 @@ class TaskStackClientTests(unittest.TestCase):
         self.assertIsNone(client.token)
         self.assertIsNone(client.user_id)
 
+    def test_default_timeout_outlasts_a_sleeping_free_host(self):
+        # The first request after the server slept can take close to a minute.
+        self.assertGreaterEqual(TaskStackClient().timeout, 45)
+
     def test_unreachable_server_raises_network_error(self):
         client = TaskStackClient("http://127.0.0.1:1", timeout=2)
         with self.assertRaises(NetworkError):
