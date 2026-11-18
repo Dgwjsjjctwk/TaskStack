@@ -72,6 +72,12 @@ class DesktopWindowTests(unittest.TestCase):
 
         self.main_window = main_window
         self.client = desktop_net.client
+        saved = (self.client.base_url, self.client.token, self.client.timeout)
+        self.addCleanup(
+            lambda: setattr(self.client, "base_url", saved[0])
+            or setattr(self.client, "token", saved[1])
+            or setattr(self.client, "timeout", saved[2])
+        )
         self.client.base_url = self.url
         self.client.token = "good-token"
         self.client.timeout = 5
