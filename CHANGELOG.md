@@ -15,6 +15,10 @@
 - Добавлен `GET /ping` — проверка доступности без обращения к базе данных. Индикатор связи на компьютере теперь спрашивает `/ping` (на старых серверах `/health`), раз в 30 секунд вместо 5 и не опрашивает сервер, пока окно скрыто в трей или свёрнуто; открытые клиенты больше не мешают серверу и базе уснуть. `/health` по-прежнему проверяет базу.
 - Удалён дублирующийся код виджета задачи в `main_window.py` (поведение не изменилось).
 - Добавлен workflow `tests.yml`: все тесты запускаются при каждом pull request и push в `main`.
+- Настольное приложение больше не зависает при обращении к серверу: вход и регистрация, загрузка, добавление, отметка и удаление задач, очистка завершённых, список пользователей и групп, проверка связи и запрос к ИИ выполняются в фоновых потоках, а результат приходит в окно сигналом. Окно остаётся живым, пока усыплённый сервер просыпается (до минуты); если ответ не пришёл, показывается понятная ошибка. Раньше все 12 сетевых вызовов блокировали интерфейс.
+- Если сессия истекла (ответ 401), приложение просит войти заново. Если не удалось сохранить отметку «выполнено», список тихо перечитывается с сервера, чтобы экран не расходился с данными.
+- Настольное приложение использует тот же HTTP-клиент `TaskStackClient` (`mobile/taskstack_api.py`), что и Android-приложение; собственный код на `urllib` в `main_window.py` удалён. `TaskManager.spec` получил `pathex` для `mobile/`. Запрос к ИИ (не к серверу TaskStack) остаётся отдельным, но тоже работает в фоне.
+- Добавлены тесты: сетевой слой без Qt и «безголовые» тесты окна с фейковым сервером (окно не ждёт медленный сервер, добавление, отметка, удаление, очистка, вход, ошибки).
 
 ### English
 
@@ -29,6 +33,10 @@
 - Added `GET /ping`, a liveness check that never touches the database. The desktop network indicator now asks `/ping` (`/health` on older servers), every 30 seconds instead of 5, and does not poll while the window is hidden in the tray or minimized; open clients no longer keep the server and its database awake. `/health` still checks the database.
 - Removed duplicated task-widget code from `main_window.py` (no behaviour change).
 - Added a `tests.yml` workflow: the whole test suite runs on every pull request and every push to `main`.
+- The desktop app no longer freezes while it talks to the server: sign-in and registration, loading, adding, ticking and deleting tasks, clearing completed ones, the user and group lists, the connection check and the AI request all run on background threads, and the result is delivered to the window by a signal. The window stays alive while a sleeping server wakes up (up to a minute), and a failure shows a clear error. Before, all 12 network calls blocked the interface.
+- When the session has expired (HTTP 401) the app asks you to sign in again. If saving a "completed" tick fails, the list is quietly reloaded from the server so the screen never disagrees with the data.
+- The desktop app now uses the same HTTP client, `TaskStackClient` (`mobile/taskstack_api.py`), as the Android app; its own `urllib` code in `main_window.py` is gone. `TaskManager.spec` gained a `pathex` entry for `mobile/`. The AI request (not a TaskStack endpoint) stays separate but also runs in the background.
+- New tests: the Qt-free network layer, and headless window tests against a fake server (the window does not wait for a slow server; add, tick, delete, clear, sign-in, errors).
 
 ## 1.4.0 — 2026-11-15
 

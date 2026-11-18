@@ -348,21 +348,29 @@ class ServerAuthenticationTests(unittest.TestCase):
         )
 
     def test_client_endpoint_paths_exist_in_api(self):
-        source = (Path(__file__).parents[1] / "main_window.py").read_text(
+        # Desktop and Android both talk to the server through this one client.
+        source = (Path(__file__).parents[1] / "mobile" / "taskstack_api.py").read_text(
             encoding="utf-8"
         )
         client_paths = {
-            re.sub(r"\{(?:self\.)?(?:user_id|current_user_id|task_id|widget\.task_id)\}", "{task_id}", path.split("?", 1)[0])
-            for path in re.findall(r'f"\{SERVER_URL\}([^"]+)"', source)
+            re.sub(r"\{[^}]*\}", "{task_id}", path.split("?", 1)[0])
+            for path in re.findall(
+                r'_request\(\s*"(?:GET|POST|PUT|DELETE)",\s*f?"(/[^"]*)"', source
+            )
         }
-        client_paths.discard("{endpoint}")
-        client_paths.update({"/register", "/login"})
         api_paths = {
             route.path for route in server.app.routes if getattr(route, "path", None)
         }
 
-        self.assertTrue(client_paths)
+        self.assertIn("/tasks/{task_id}/status", client_paths)
+        self.assertIn("/ping", client_paths)
         self.assertEqual(client_paths - api_paths, set())
+
+    def test_desktop_has_no_http_code_of_its_own(self):
+        root = Path(__file__).parents[1]
+        source = (root / "main_window.py").read_text(encoding="utf-8")
+        self.assertNotIn("urlopen", source)
+        self.assertNotIn("SERVER_URL", source)
 
 
 if __name__ == "__main__":

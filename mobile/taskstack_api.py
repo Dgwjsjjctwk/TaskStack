@@ -155,8 +155,12 @@ class TaskStackClient:
 
     # -- account -----------------------------------------------------------
 
-    def health(self):
-        return self._request("GET", "/health")
+    def health(self, timeout=None):
+        return self._request("GET", "/health", timeout=timeout)
+
+    def ping(self, timeout=None):
+        """Cheap liveness check that does not touch the server's database."""
+        return self._request("GET", "/ping", timeout=timeout)
 
     def register(self, username, password):
         return self._request(
